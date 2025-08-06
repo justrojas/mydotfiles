@@ -36,13 +36,11 @@ detect_os() {
             OS=$ID
             VER=$VERSION_ID
         fi
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        OS="mac"
     else
         print_error "Unsupported OS: $OSTYPE"
         exit 1
     fi
-    
+
     print_info "Detected OS: $OS"
 }
 
@@ -52,18 +50,6 @@ run_installation() {
         ubuntu|debian)
             print_info "Running Ubuntu/Debian installation..."
             bash os/ubuntu/install.sh
-            ;;
-        arch|manjaro)
-            print_info "Running Arch Linux installation..."
-            bash os/arch/install.sh
-            ;;
-        fedora)
-            print_info "Running Fedora installation..."
-            bash os/fedora/install.sh
-            ;;
-        mac)
-            print_info "Running macOS installation..."
-            bash os/mac/install.sh
             ;;
         *)
             print_error "No installation script found for $OS"
@@ -75,42 +61,74 @@ run_installation() {
 # Link configuration files
 link_configs() {
     print_info "Linking configuration files..."
-    
+
     # Shell configurations
     if [ ! -d "$HOME/.config" ]; then
         mkdir -p "$HOME/.config"
     fi
-    
+
     # Link OS-specific zsh config
     if [ -f "$HOME/.zshrc" ]; then
         print_warning "Backing up existing .zshrc to .zshrc.bak"
         mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
     fi
-    
+
     # Use OS-specific zshrc if available
     if [ -f "$PWD/os/$OS/zshrc" ]; then
         ln -sf "$PWD/os/$OS/zshrc" "$HOME/.zshrc"
         print_success "Linked $OS-specific zshrc"
     else
-        ln -sf "$PWD/config/shell/zsh/zshrc" "$HOME/.zshrc"
+        ln -sf "$PWD/config/shell/zsh/.zshrc" "$HOME/.zshrc"
         print_success "Linked generic zshrc"
     fi
-    
-    # Link p10k config
-    if [ -f "$HOME/.p10k.zsh" ]; then
-        print_warning "Backing up existing .p10k.zsh to .p10k.zsh.bak"
-        mv "$HOME/.p10k.zsh" "$HOME/.p10k.zsh.bak"
+
+    # Note: p10k configuration removed - using custom zsh setup
+
+    # Link tmux configuration
+    if [ -f "$PWD/.config/tmux/tmux.conf" ]; then
+        # Create .config/tmux directory if it doesn't exist
+        mkdir -p "$HOME/.config/tmux"
+        
+        # Remove existing tmux config files if they exist
+        if [ -f "$HOME/.tmux.conf" ] || [ -L "$HOME/.tmux.conf" ]; then
+            print_warning "Backing up existing .tmux.conf to .tmux.conf.bak"
+            mv "$HOME/.tmux.conf" "$HOME/.tmux.conf.bak"
+        fi
+        if [ -f "$HOME/.config/tmux/tmux.conf" ] || [ -L "$HOME/.config/tmux/tmux.conf" ]; then
+            print_warning "Backing up existing .config/tmux/tmux.conf to .config/tmux/tmux.conf.bak"
+            mv "$HOME/.config/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf.bak"
+        fi
+        
+        # Symbolically link tmux config to both locations
+        ln -sf "$PWD/.config/tmux/tmux.conf" "$HOME/.tmux.conf"
+        ln -sf "$PWD/.config/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
+        print_success "Linked tmux configuration to both ~/.tmux.conf and ~/.config/tmux/tmux.conf"
+
+        # Link entire tmux plugins directory
+        if [ -d "$PWD/.config/tmux/plugins" ]; then
+            if [ -d "$HOME/.config/tmux/plugins" ] || [ -L "$HOME/.config/tmux/plugins" ]; then
+                print_warning "Backing up existing tmux plugins directory"
+                mv "$HOME/.config/tmux/plugins" "$HOME/.config/tmux/plugins.bak"
+            fi
+            ln -sf "$PWD/.config/tmux/plugins" "$HOME/.config/tmux/plugins"
+            print_success "Linked tmux plugins directory"
+        fi
+        
+        # Install tmux plugins
+        print_info "Installing tmux plugins..."
+        "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" || print_warning "Failed to install tmux plugins - run manually later"
     fi
-    
-    # Use OS-specific p10k if available
-    if [ -f "$PWD/os/$OS/p10k.zsh" ]; then
-        ln -sf "$PWD/os/$OS/p10k.zsh" "$HOME/.p10k.zsh"
-        print_success "Linked $OS-specific p10k configuration"
-    elif [ -f "$PWD/config/shell/zsh/p10k.zsh" ]; then
-        ln -sf "$PWD/config/shell/zsh/p10k.zsh" "$HOME/.p10k.zsh"
-        print_success "Linked generic p10k configuration"
+
+    # Link kitty configuration
+    if [ -d "$PWD/.config/kitty" ]; then
+        if [ -d "$HOME/.config/kitty" ] || [ -L "$HOME/.config/kitty" ]; then
+            print_warning "Backing up existing kitty config to kitty.bak"
+            mv "$HOME/.config/kitty" "$HOME/.config/kitty.bak"
+        fi
+        ln -sf "$PWD/.config/kitty" "$HOME/.config/kitty"
+        print_success "Linked kitty configuration"
     fi
-    
+
     # Link other configs as needed
     print_success "Configuration files linked"
 }
@@ -118,10 +136,10 @@ link_configs() {
 # Main installation flow
 main() {
     print_info "Starting dotfiles installation..."
-    
+
     # Detect OS
     detect_os
-    
+
     # Ask for installation type
     echo ""
     echo "Select installation type:"
@@ -130,7 +148,7 @@ main() {
     echo "3) Both"
     echo "4) Configuration files only"
     read -p "Enter choice [1-4]: " choice
-    
+
     case $choice in
         1)
             run_installation
@@ -158,7 +176,7 @@ main() {
             exit 1
             ;;
     esac
-    
+
     print_success "Installation completed!"
     print_info "Please restart your shell or run: source ~/.zshrc"
 }

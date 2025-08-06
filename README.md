@@ -1,12 +1,12 @@
-# Dotfiles
+# My Personal Dotfiles
 
 A comprehensive collection of configuration files and setup scripts for Ubuntu, Arch Linux, Fedora, and macOS systems.
 
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/yourusername/dotfiles.git
-cd dotfiles
+git clone https://github.com/yourusername/my-dotfiles.git
+cd my-dotfiles
 ./install.sh
 ```
 
