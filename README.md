@@ -47,8 +47,6 @@ cd my-dotfiles
 │       ├── zshrc
 │       └── p10k.zsh
 ├── scripts/               # Utility scripts
-│   ├── hardware/         # Hardware-specific scripts
-│   │   └── lg-gram/      # LG Gram laptop audio fixes
 │   ├── setup/            # Setup and installation helpers
 │   └── utilities/        # General utility scripts
 └── install.sh            # Main installation script
@@ -160,14 +158,6 @@ config/desktop/kde/latest.kksrc
 
 ### Themes
 Wallpapers and backgrounds in `assets/themes/backgrounds/`
-
-## 🔌 Hardware Support
-
-### LG Gram Audio Fix
-For LG Gram laptops with audio issues:
-```bash
-sudo scripts/hardware/lg-gram/necessary-verbs.sh
-```
 
 ## 📋 Requirements
 
