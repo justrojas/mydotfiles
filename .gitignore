@@ -1,0 +1,25 @@
+# Sensitive configuration files (tokens, secrets, etc.)
+.zshrc.work
+.zshrc.local
+*.secret
+**/secrets.*
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Editor-specific files
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Cache and temporary files
+*.cache
+*.log
+.zcompdump*
