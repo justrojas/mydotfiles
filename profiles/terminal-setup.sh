@@ -325,7 +325,10 @@ if $setup_zsh; then
         if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
             log_info "Installing Oh My Zsh..."
             if [[ $DRY_RUN -eq 0 ]]; then
-                sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
+                # RUNZSH=no  — don't exec zsh at the end (would kill this script)
+                # KEEP_ZSHRC=yes — don't overwrite .zshrc (we symlink ours after)
+                RUNZSH=no KEEP_ZSHRC=yes \
+                    sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
                     "" --unattended || true
             else
                 log_info "[DRY RUN] Would install Oh My Zsh"
