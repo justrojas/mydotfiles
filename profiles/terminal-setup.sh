@@ -327,9 +327,10 @@ if $setup_zsh; then
             if [[ $DRY_RUN -eq 0 ]]; then
                 # RUNZSH=no  — don't exec zsh at the end (would kill this script)
                 # KEEP_ZSHRC=yes — don't overwrite .zshrc (we symlink ours after)
+                # </dev/tty  — prevent installer from hanging on piped stdin
                 RUNZSH=no KEEP_ZSHRC=yes \
                     sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
-                    "" --unattended || true
+                    "" --unattended </dev/tty || true
             else
                 log_info "[DRY RUN] Would install Oh My Zsh"
             fi
@@ -357,13 +358,21 @@ if $setup_zsh; then
             fi
             if [[ $DRY_RUN -eq 0 ]]; then
                 # chsh only works for local /etc/passwd users; fall back to usermod
-                if chsh -s "$zsh_path" 2>/dev/null; then
+                # Redirect stdin from /dev/tty so chsh password prompt doesn't hang
+                if chsh -s "$zsh_path" </dev/tty 2>/dev/null; then
                     log_success "Login shell set to zsh — open a new terminal to apply"
                 elif sudo usermod -s "$zsh_path" "$USER" 2>/dev/null; then
                     log_success "Login shell set to zsh via usermod — open a new terminal to apply"
                 else
                     log_warning "Could not change login shell automatically (non-local user?)"
-                    log_info "To set zsh manually: sudo usermod -s $zsh_path \$USER"
+                    # Fallback: add exec zsh to ~/.bashrc so bash immediately hands off to zsh
+                    if ! grep -qF "exec zsh" "$HOME/.bashrc" 2>/dev/null; then
+                        log_info "Adding 'exec zsh' fallback to ~/.bashrc..."
+                        run_or_dry bash -c "printf '\n# Switch to zsh (login shell could not be changed)\n[ -x \"$zsh_path\" ] && exec \"$zsh_path\" -l\n' >> \"\$HOME/.bashrc\""
+                        log_success "~/.bashrc will launch zsh automatically"
+                    else
+                        log_success "~/.bashrc already has exec zsh fallback"
+                    fi
                 fi
             else
                 log_info "[DRY RUN] Would run: chsh -s $zsh_path"
