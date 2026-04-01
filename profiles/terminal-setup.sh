@@ -351,12 +351,23 @@ if $setup_zsh; then
         if [[ "$SHELL" != "$zsh_path" ]]; then
             log_info "Setting login shell to zsh ($zsh_path)..."
             # Ensure zsh is in /etc/shells
-            if ! grep -qxF "$zsh_path" /etc/shells; then
+            if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
                 log_info "Adding $zsh_path to /etc/shells..."
                 run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells"
             fi
-            run_or_dry chsh -s "$zsh_path" "$USER"
-            log_success "Login shell set to zsh — restart your session or open a new terminal"
+            if [[ $DRY_RUN -eq 0 ]]; then
+                # chsh only works for local /etc/passwd users; fall back to usermod
+                if chsh -s "$zsh_path" 2>/dev/null; then
+                    log_success "Login shell set to zsh — open a new terminal to apply"
+                elif sudo usermod -s "$zsh_path" "$USER" 2>/dev/null; then
+                    log_success "Login shell set to zsh via usermod — open a new terminal to apply"
+                else
+                    log_warning "Could not change login shell automatically (non-local user?)"
+                    log_info "To set zsh manually: sudo usermod -s $zsh_path \$USER"
+                fi
+            else
+                log_info "[DRY RUN] Would run: chsh -s $zsh_path"
+            fi
         else
             log_success "Login shell is already zsh"
         fi
