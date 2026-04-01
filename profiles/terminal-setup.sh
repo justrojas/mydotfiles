@@ -99,6 +99,22 @@ install_apt_package() {
     log_success "$pkg installed"
 }
 
+# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)
+install_fzf() {
+    log_info "Installing fzf via git..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        if [[ -d "$HOME/.fzf" ]]; then
+            git -C "$HOME/.fzf" pull --quiet
+        else
+            git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
+        fi
+        "$HOME/.fzf/install" --all --no-bash --no-fish --no-update-rc
+    else
+        log_info "[DRY RUN] Would clone fzf to ~/.fzf and run install"
+    fi
+    log_success "fzf installed"
+}
+
 # Install tmux 3.4 from source (Ubuntu 22.04 apt only has 3.2a)
 install_tmux() {
     log_info "Installing tmux ${PINNED_TMUX_VERSION} from source..."
@@ -208,6 +224,7 @@ declare -A TOOL_VERSIONS=(
     [git]="system"
     [curl]="system"
     [npm]="system"
+    [fzf]="system"
 )
 
 declare -A TOOL_INSTALLERS=(
@@ -218,9 +235,10 @@ declare -A TOOL_INSTALLERS=(
     [git]="install_apt_package git"
     [curl]="install_apt_package curl"
     [npm]="install_apt_package nodejs npm"
+    [fzf]="install_fzf"
 )
 
-for tool in tmux nvim kitty zsh git curl npm; do
+for tool in tmux nvim kitty zsh git curl npm fzf; do
     if command -v "$tool" >/dev/null 2>&1; then
         # For nvim, verify it meets the minimum pinned version
         if [[ "$tool" == "nvim" ]]; then
@@ -242,6 +260,12 @@ for tool in tmux nvim kitty zsh git curl npm; do
         handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
     fi
 done
+
+# fzf may be installed via apt but the oh-my-zsh plugin requires ~/.fzf to exist
+if command -v fzf >/dev/null 2>&1 && [[ ! -d "$HOME/.fzf" ]]; then
+    log_info "fzf found via apt but ~/.fzf missing — running git install for oh-my-zsh plugin..."
+    install_fzf
+fi
 echo ""
 
 # ============================================================================

@@ -6,6 +6,7 @@ export ZSH="$HOME/.oh-my-zsh"
 export EDITOR=nvim
 export GOPATH=$HOME/go
 export NVM_DIR="$HOME/.nvm"
+export FZF_BASE="$HOME/.fzf"
 # Resolve DOTFILES from the .zshrc symlink location (works regardless of where the repo lives)
 export DOTFILES="$(cd "$(dirname "$(readlink -f "${(%):-%x}")")"/../.. && pwd)"
 # History
