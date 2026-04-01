@@ -86,17 +86,75 @@ install_kitty() {
     log_success "kitty installed"
 }
 
-# Install git/curl via apt
+# Install a package via apt — returns 1 (non-fatal) if the package is not found
 install_apt_package() {
     local pkg="$1"
     log_info "Installing $pkg via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
         sudo apt-get update -qq
-        sudo apt-get install -y "$pkg"
+        if ! sudo apt-get install -y "$pkg" 2>&1; then
+            log_error "apt could not install '$pkg' — package may not be in the default repos"
+            return 1
+        fi
     else
         log_info "[DRY RUN] Would run: sudo apt-get install -y $pkg"
     fi
     log_success "$pkg installed"
+}
+
+# Install nodejs + npm via apt (needed by nvim Mason LSPs)
+install_nodejs() {
+    log_info "Installing nodejs and npm via apt..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        sudo apt-get update -qq
+        if ! sudo apt-get install -y nodejs npm 2>&1; then
+            log_error "apt could not install nodejs/npm"
+            return 1
+        fi
+    else
+        log_info "[DRY RUN] Would run: sudo apt-get install -y nodejs npm"
+    fi
+    log_success "nodejs and npm installed"
+}
+
+# Install eza via the official gierens apt repo (not in default Ubuntu 22.04 repos)
+install_eza() {
+    log_info "Installing eza via gierens apt repo..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        sudo apt-get update -qq
+        sudo apt-get install -y gpg
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
+            | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
+        sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+        sudo apt-get update -qq
+        sudo apt-get install -y eza
+    else
+        log_info "[DRY RUN] Would add gierens apt repo and install eza"
+    fi
+    log_success "eza installed"
+}
+
+# Install glow via the charm.sh apt repo (not in default Ubuntu 22.04 repos)
+install_glow() {
+    log_info "Installing glow via charm.sh apt repo..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        sudo apt-get update -qq
+        sudo apt-get install -y gpg
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://repo.charm.sh/apt/gpg.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
+            | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null
+        sudo chmod 644 /etc/apt/keyrings/charm.gpg /etc/apt/sources.list.d/charm.list
+        sudo apt-get update -qq
+        sudo apt-get install -y glow
+    else
+        log_info "[DRY RUN] Would add charm.sh apt repo and install glow"
+    fi
+    log_success "glow installed"
 }
 
 # Install zoxide via official installer (apt version 0.4.x is too old for 'zoxide init zsh --cmd cd')
@@ -203,7 +261,7 @@ handle_missing_tool() {
 
     if [[ $NONINTERACTIVE -eq 1 ]]; then
         log_info "Non-interactive mode: installing $tool automatically"
-        $install_fn
+        $install_fn || log_warning "$tool installation failed — continuing without it"
         return
     fi
 
@@ -215,7 +273,7 @@ handle_missing_tool() {
     echo "" >&2
 
     case "${choice,,}" in
-        1|i) $install_fn ;;
+        1|i) $install_fn || log_warning "$tool installation failed — continuing without it" ;;
         2|s) log_info "Skipping $tool" ;;
         3|a) log_error "Setup aborted."; exit 1 ;;
         *) log_info "No valid choice — skipping $tool" ;;
@@ -251,13 +309,13 @@ declare -A TOOL_INSTALLERS=(
     [zsh]="install_zsh"
     [git]="install_apt_package git"
     [curl]="install_apt_package curl"
-    [npm]="install_apt_package nodejs npm"
+    [npm]="install_nodejs"
     [fzf]="install_fzf"
-    [eza]="install_apt_package eza"
+    [eza]="install_eza"
     [batcat]="install_apt_package bat"
     [zoxide]="install_zoxide"
     [tree]="install_apt_package tree"
-    [glow]="install_apt_package glow"
+    [glow]="install_glow"
     [rsync]="install_apt_package rsync"
 )
 
