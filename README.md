@@ -1,191 +1,205 @@
-# My Personal Dotfiles
+# dotfiles
 
-A comprehensive collection of configuration files and setup scripts for Ubuntu, Arch Linux, Fedora, and macOS systems.
+Personal terminal environment configuration for Ubuntu/Debian.
+Clone this repo, run one script, and have a fully configured shell on any machine.
 
-## 🚀 Quick Start
+## What's included
+
+| Tool | Config location |
+|---|---|
+| **zsh** | `config/zsh/.zshrc` |
+| **oh-my-posh** | `config/zsh/oh-my-posh.omp.json` |
+| **tmux** | `config/tmux/tmux.conf` |
+| **kitty** | `config/kitty/kitty.conf` |
+| **neovim** | NvChad (cloned on install) |
+| **KDE Plasma** | `config/kde/` |
+
+## Quick start
 
 ```bash
-git clone https://github.com/yourusername/my-dotfiles.git
-cd my-dotfiles
-./install.sh
+git clone --recurse-submodules https://github.com/<you>/my-dotfiles.git ~/my-dotfiles
+cd ~/my-dotfiles
+bash install.sh
 ```
 
-## 📁 Directory Structure
+`--recurse-submodules` is required to pull the tmux plugins.
 
-```
-.
-├── assets/                 # Visual assets and resources
-│   ├── fonts/             # Hack Nerd Fonts collection
-│   └── themes/            # Themes and backgrounds
-│       └── backgrounds/   # Wallpapers and videos
-├── config/                # Configuration files
-│   ├── applications/      # Application-specific configs
-│   │   ├── firefox/      # Firefox customization (userChrome.css)
-│   │   └── rofi/         # Rofi launcher configuration
-│   ├── desktop/          # Desktop environment configs
-│   │   └── kde/          # KDE Plasma shortcuts and settings
-│   ├── docker/           # Docker configurations
-│   └── shell/            # Shell configurations
-│       ├── docker_functions.bash  # Docker helper functions
-│       └── zsh/          # Zsh configuration
-├── os/                    # OS-specific installation scripts
-│   ├── arch/             # Arch Linux scripts & configs
-│   │   ├── install.sh    # Base system setup
-│   │   ├── kde_install.sh # KDE setup
-│   │   ├── zshrc         # Arch-specific zsh config (with AUR detection)
-│   │   └── p10k.zsh      # Powerlevel10k config
-│   ├── fedora/           # Fedora scripts & configs
-│   │   ├── install.sh
-│   │   ├── kde_install.sh
-│   │   ├── zshrc
-│   │   └── p10k.zsh
-│   ├── mac/              # macOS scripts
-│   │   └── install.sh
-│   └── ubuntu/           # Ubuntu/Debian scripts & configs
-│       ├── install.sh
-│       ├── kde_install.sh
-│       ├── zshrc
-│       └── p10k.zsh
-├── scripts/               # Utility scripts
-│   ├── setup/            # Setup and installation helpers
-│   └── utilities/        # General utility scripts
-└── install.sh            # Main installation script
-```
+### Installation profiles
 
-## 🛠️ Features
+The interactive menu offers two options:
 
-### Automated Installation
-- **Universal installer**: Detects your OS and runs appropriate setup
-- **Modular design**: Choose between base system, KDE Plasma, or both
-- **Safe installation**: Backs up existing configurations
+**1 — Terminal Setup** (no sudo required)
+- Links all configs via symlinks (`~/.zshrc`, `~/.config/tmux`, `~/.config/kitty`)
+- Installs oh-my-zsh, zsh plugins, oh-my-posh, NvChad
+- Assumes packages (zsh, tmux, kitty, nvim) are already installed
+- Safe to run on any machine, including restricted work environments
 
-### Supported Systems
-- **Ubuntu/Debian** (primary)
-- **Arch Linux/Manjaro**
-- **Fedora**
-- **macOS**
+**2 — Desktop Setup** (Ubuntu/Debian, requires sudo)
+- Installs all packages via apt + third-party repos (eza, glow, zoxide, neovim)
+- Then runs Terminal Setup non-interactively
+- Optionally installs KDE Plasma customisations (themes, latte-dock, Ant-Dark)
 
-### Core Tools Installed
-- **Terminal**: Zsh with Oh My Zsh, tmux, Neovim
-- **Development**: Git, Docker, build essentials
-- **Utilities**: fzf, ripgrep, bat, eza, btop, glow
-- **Fonts**: Hack Nerd Font family
+Run a profile directly if you don't want the menu:
 
-### Desktop Environment
-- **KDE Plasma** customization
-- **Themes**: Ant-Dark theme, Papirus icons
-- **Gestures**: Touchegg configuration
-- **Effects**: Rounded corners, transparency
-
-## 📝 Installation Options
-
-### 1. Full Installation
-Installs all tools and configurations:
 ```bash
-./install.sh
-# Select option 3 (Both)
+bash profiles/terminal-setup.sh --non-interactive
+bash profiles/desktop-setup.sh --dry-run
 ```
 
-### 2. Base System Only
-Installs terminal tools and development environment:
+## After install
+
+**tmux** — start a session, then install plugins:
+```
+tmux
+<Ctrl+Space> + I
+```
+
+**neovim** — open it once to trigger NvChad plugin bootstrap:
+```
+nvim
+```
+
+**zsh** — reload your shell:
+```
+exec zsh
+```
+
+## Tmux keybindings
+
+| Action | Key |
+|---|---|
+| Prefix | `Ctrl+Space` |
+| Split horizontal | `prefix + h` |
+| Split vertical | `prefix + v` |
+| Next/prev window | `Alt+L` / `Alt+H` |
+| Jump to window N | `Alt+1`–`9` |
+| Move window left/right | `prefix + H` / `prefix + L` |
+| Kill pane | `prefix + x` |
+| Kill window | `prefix + X` |
+| Rename window | `prefix + r` |
+| Toggle status bar | `prefix + b` |
+| Copy mode | `prefix + [`, then `v` to select, `y` to copy |
+
+## Kitty keybindings
+
+| Action | Key |
+|---|---|
+| New tab | `Ctrl+Shift+T` |
+| Close tab | `Ctrl+Shift+Q` |
+| Next/prev tab | `Ctrl+Shift+Right/Left` |
+| New window | `Ctrl+Shift+Enter` |
+| Close window | `Ctrl+Shift+W` |
+| Increase font size | `Ctrl+Shift+=` |
+| Decrease font size | `Ctrl+Shift+-` |
+| Reset font size | `Ctrl+Shift+Backspace` |
+
+The `kt` utility switches kitty themes interactively:
+
 ```bash
-./install.sh
-# Select option 1 (Base system setup)
+kt interactive       # fzf picker with color preview
+kt list              # print all available themes
+kt set <name>        # apply a theme by name
+kt preview <name>    # preview without applying
 ```
 
-### 3. KDE Plasma Only
-Installs desktop environment customizations:
+## Zsh features
+
+- **Prompt**: oh-my-posh with atomic layout — muted two-line powerline theme
+- **Plugins**: zsh-autosuggestions, zsh-syntax-highlighting, fzf, git, sudo
+- **Navigation**: zoxide replaces `cd` (learns frequently used directories)
+- **File listing**: eza aliases (`l`, `ls`, `la`, `ld`)
+- **Key bindings**:
+  - `Ctrl+N` — open neovim in current directory
+  - `Ctrl+G` — launch opencode
+  - `Ctrl+P` — clear screen
+- **Lazy loading**: NVM and kubectl completions load on first use (faster shell start)
+- **Work config**: create `~/.zshrc.work` for machine-specific config (not tracked)
+
+## Repository structure
+
+```
+my-dotfiles/
+├── config/
+│   ├── zsh/
+│   │   ├── .zshrc                  # symlinked to ~/.zshrc
+│   │   ├── oh-my-posh.omp.json     # prompt theme
+│   │   └── docker_functions.bash   # lazy-loaded docker helpers
+│   ├── tmux/
+│   │   ├── tmux.conf               # symlinked to ~/.config/tmux
+│   │   └── plugins/                # git submodules (tpm, sensible, yank, ...)
+│   ├── kitty/
+│   │   ├── kitty.conf              # symlinked to ~/.config/kitty
+│   │   ├── theme.conf              # active theme (symlink into kitty-themes/)
+│   │   └── kitty-themes/           # 200+ theme files
+│   └── kde/
+│       ├── latte/                  # latte-dock layouts
+│       ├── Kvantum/                # Kvantum theme (Ant-Dark)
+│       ├── touchegg/               # touchpad gesture config
+│       ├── shortcuts/              # KDE keyboard shortcut exports
+│       └── applications/firefox/   # Firefox userChrome.css customisations
+├── profiles/
+│   ├── terminal-setup.sh           # config only, no sudo
+│   ├── desktop-setup.sh            # packages + terminal + optional KDE
+│   ├── install-packages.sh         # apt installs (called by desktop-setup)
+│   └── kde-setup.sh                # KDE themes and desktop customisations
+├── lib/
+│   └── common.sh                   # shared logging, symlink, and apt helpers
+├── scripts/
+│   ├── install.sh                  # redirects to root install.sh (legacy)
+│   └── utilities/
+│       └── kt                      # kitty theme switcher
+├── assets/
+│   └── fonts/                      # Hack Nerd Font variants
+├── tests/
+│   ├── docker/
+│   │   └── Dockerfile              # parameterised Ubuntu 22.04 / 24.04 image
+│   ├── test-terminal-setup.sh      # assertions for terminal-setup.sh
+│   ├── test-install-packages.sh    # assertions for install-packages.sh
+│   └── run-docker-tests.sh         # test runner
+└── install.sh                      # interactive entry point
+```
+
+## Testing
+
+Tests run the install scripts inside a clean Docker container and assert the expected outcome. Docker must be installed and running.
+
 ```bash
-./install.sh
-# Select option 2 (KDE Plasma setup)
+# Run all tests against all Ubuntu versions
+bash tests/run-docker-tests.sh
+
+# Run only the terminal setup suite on Ubuntu 22.04
+bash tests/run-docker-tests.sh --suite terminal --ubuntu 2204
+
+# Keep the container after a failure to inspect it
+bash tests/run-docker-tests.sh --suite packages --keep
 ```
 
-### 4. Configuration Files Only
-Links dotfiles without installing packages:
+On failure the output shows exactly which assertion failed:
+
+```
+  FAIL  ~/.config/tmux is not a symlink
+  FAIL  command not found: oh-my-posh
+Results: 11 passed, 2 failed
+```
+
+## Work / machine-specific config
+
+Anything that should not be committed (employer tokens, ROS environment variables, machine-specific paths) goes in `~/.zshrc.work`. This file is sourced automatically if it exists and is excluded from git.
+
 ```bash
-./install.sh
-# Select option 4 (Configuration files only)
+# ~/.zshrc.work  (example)
+export ROS_DOMAIN_ID=42
+export KUBECONFIG=~/.kube/work-cluster.yaml
+source /opt/ros/humble/setup.zsh
 ```
 
-## 🔧 Utility Scripts
+## Fonts
 
-### Shell Utilities
-- `claude_launcher.sh` - Launch Claude AI in fullscreen Firefox
-- `firefox_fix.sh` - Firefox launcher utility
-- `ssh_gen.sh` - Interactive SSH key generator
-- `drive.sh` - Mount OneDrive using rclone
+Hack Nerd Font variants are included in `assets/fonts/`. The KDE setup script installs them system-wide. Install manually with:
 
-### Spotify Control
-Located in `scripts/utilities/spotify_tools/`:
-- Control Spotify playback from command line
-- Next/previous track, play/pause, volume control
-- Uses MPRIS for Linux desktop integration
-
-### Docker Functions
-Source `config/shell/docker_functions.bash` for helpers:
-- `dls` - List containers with color coding
-- `dils` - List images
-- `dsh <container>` - Shell into container
-- `dkill <container>` - Stop container
-- `drm <container>` - Remove container
-- `dcommit <container> <image:tag>` - Commit container
-
-## 🎨 Customization
-
-### OS-Specific Configurations
-Each OS has its own zsh configuration with specific features:
-- **Arch Linux**: Includes AUR helper detection (yay/paru) and package search
-- **Ubuntu**: Docker functions, ROS settings, and apt-specific aliases
-- **Fedora**: DNF-specific configurations
-- **macOS**: Homebrew paths and macOS-specific settings
-
-The installer automatically links the appropriate configuration based on your OS.
-
-### Firefox
-Custom CSS for a clean, minimal interface:
-1. Navigate to `about:profiles`
-2. Open root directory
-3. Create `chrome` folder
-4. Copy files from `config/applications/firefox/chrome/`
-5. Enable in `about:config`: `toolkit.legacyUserProfileCustomizations.stylesheets`
-
-### KDE Shortcuts
-Import keyboard shortcuts:
 ```bash
-# System Settings > Shortcuts > Import Scheme
-config/desktop/kde/latest.kksrc
+sudo cp assets/fonts/*.ttf /usr/share/fonts/
+sudo fc-cache -fv
 ```
 
-### Themes
-Wallpapers and backgrounds in `assets/themes/backgrounds/`
-
-## 📋 Requirements
-
-### General
-- Git
-- Curl/wget
-- sudo access
-
-### Ubuntu/Debian
-- apt package manager
-- Ubuntu 20.04+ recommended
-
-### Arch Linux
-- pacman and yay (AUR helper)
-- base-devel group
-
-### Fedora
-- dnf package manager
-- Development tools group
-
-### macOS
-- Homebrew
-- Command Line Tools
-
-## 🤝 Contributing
-
-Feel free to submit issues and pull requests. Please follow the existing directory structure and naming conventions.
-
-## 📄 License
-
-This project is open source and available under the MIT License.
+Set **JetBrains Mono** as the kitty font (configured in `config/kitty/kitty.conf`).

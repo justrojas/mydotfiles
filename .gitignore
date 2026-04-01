@@ -1,4 +1,6 @@
 # Sensitive configuration files (tokens, secrets, etc.)
+.env
+.env.*
 .zshrc.work
 .zshrc.local
 *.secret
@@ -7,6 +9,7 @@
 # Backup files
 *.backup
 *.bak
+*.bak.*
 *~
 
 # OS-specific files
@@ -23,3 +26,11 @@ Thumbs.db
 *.cache
 *.log
 .zcompdump*
+
+# Misplaced config directories (managed by KDE, not tracked here)
+.config/latte/
+
+# Compiled/build artifacts
+scripts/packages/tmux-*/
+*.o
+*.a
