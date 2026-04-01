@@ -220,7 +220,22 @@ declare -A TOOL_INSTALLERS=(
 
 for tool in tmux nvim kitty zsh git curl; do
     if command -v "$tool" >/dev/null 2>&1; then
-        log_success "$tool found"
+        # For nvim, verify it meets the minimum pinned version
+        if [[ "$tool" == "nvim" ]]; then
+            nvim_actual=$(nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || echo "v0.0.0")
+            # Strip leading 'v' and compare major.minor
+            actual_minor=$(echo "$nvim_actual" | grep -oP '\d+\.\d+' | head -1)
+            pinned_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
+            if [[ "$(printf '%s\n' "$actual_minor" "$pinned_minor" | sort -V | head -1)" != "$pinned_minor" && \
+                  "$actual_minor" != "$pinned_minor" ]]; then
+                log_warning "nvim found but version $nvim_actual is older than pinned $PINNED_NVIM_VERSION"
+                handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
+            else
+                log_success "$tool found ($nvim_actual)"
+            fi
+        else
+            log_success "$tool found"
+        fi
     else
         handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
     fi
@@ -470,8 +485,10 @@ log_info "What was configured:"
 echo ""
 log_info "Next steps:"
 [[ -L "$HOME/.tmux.conf" ]] && echo "  • Start tmux and press Ctrl+Space + I to install plugins"
-[[ -d "$HOME/.config/nvim" ]] && echo "  • Run 'nvim' to bootstrap plugins"
-[[ -L "$HOME/.zshrc" ]] && echo "  • Run 'exec zsh' or open a new terminal"
+[[ -d "$HOME/.config/nvim" ]] && echo "  • Open a NEW terminal, then run 'nvim' to bootstrap plugins"
+[[ -L "$HOME/.zshrc" ]] && echo "  • Open a new terminal (or run 'exec zsh') to activate zsh + oh-my-posh"
+echo ""
+log_warning "IMPORTANT: Open a new terminal before running nvim — the correct nvim from ~/.local/bin must be in PATH"
 echo ""
 log_info "Tmux prefix: Ctrl+Space"
 echo "  • Split horizontal : prefix + h"
