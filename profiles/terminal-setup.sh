@@ -207,6 +207,7 @@ declare -A TOOL_VERSIONS=(
     [zsh]="$PINNED_ZSH_VERSION"
     [git]="system"
     [curl]="system"
+    [npm]="system"
 )
 
 declare -A TOOL_INSTALLERS=(
@@ -216,9 +217,10 @@ declare -A TOOL_INSTALLERS=(
     [zsh]="install_zsh"
     [git]="install_apt_package git"
     [curl]="install_apt_package curl"
+    [npm]="install_apt_package nodejs npm"
 )
 
-for tool in tmux nvim kitty zsh git curl; do
+for tool in tmux nvim kitty zsh git curl npm; do
     if command -v "$tool" >/dev/null 2>&1; then
         # For nvim, verify it meets the minimum pinned version
         if [[ "$tool" == "nvim" ]]; then
@@ -265,6 +267,36 @@ if [[ -d "$DOTFILES_DIR/config/tmux" ]]; then
     fi
 else
     log_error "Tmux config not found at $DOTFILES_DIR/config/tmux"
+fi
+
+# ============================================================================
+# FONTS
+# ============================================================================
+log_step "Nerd fonts"
+
+fonts_src="$DOTFILES_DIR/assets/fonts"
+fonts_dst="$HOME/.local/share/fonts"
+
+if [[ -d "$fonts_src" ]]; then
+    ensure_dir "$fonts_dst"
+    new_fonts=0
+    for f in "$fonts_src"/*.ttf "$fonts_src"/*.otf; do
+        [[ -f "$f" ]] || continue
+        dest="$fonts_dst/$(basename "$f")"
+        if [[ ! -f "$dest" ]]; then
+            run_or_dry cp "$f" "$dest"
+            (( new_fonts++ )) || true
+        fi
+    done
+    if [[ $new_fonts -gt 0 ]]; then
+        log_info "Rebuilding font cache..."
+        run_or_dry fc-cache -f "$fonts_dst"
+        log_success "Installed $new_fonts nerd font(s)"
+    else
+        log_success "Nerd fonts already installed"
+    fi
+else
+    log_warning "assets/fonts not found — skipping font install"
 fi
 
 # ============================================================================
