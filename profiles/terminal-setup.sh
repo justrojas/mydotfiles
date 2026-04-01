@@ -351,24 +351,25 @@ if $setup_zsh; then
         zsh_path="$(command -v zsh)"
         if [[ "$SHELL" != "$zsh_path" ]]; then
             log_info "Setting login shell to zsh ($zsh_path)..."
-            # Ensure zsh is in /etc/shells
+            # Ensure zsh is in /etc/shells (needed for chsh)
             if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
                 log_info "Adding $zsh_path to /etc/shells..."
-                run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells"
+                run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells" </dev/tty
             fi
             if [[ $DRY_RUN -eq 0 ]]; then
                 # chsh only works for local /etc/passwd users; fall back to usermod
-                # Redirect stdin from /dev/tty so chsh password prompt doesn't hang
+                # </dev/tty ensures password prompts reach the terminal
                 if chsh -s "$zsh_path" </dev/tty 2>/dev/null; then
                     log_success "Login shell set to zsh — open a new terminal to apply"
-                elif sudo usermod -s "$zsh_path" "$USER" 2>/dev/null; then
+                elif sudo usermod -s "$zsh_path" "$USER" </dev/tty 2>/dev/null; then
                     log_success "Login shell set to zsh via usermod — open a new terminal to apply"
                 else
                     log_warning "Could not change login shell automatically (non-local user?)"
                     # Fallback: add exec zsh to ~/.bashrc so bash immediately hands off to zsh
                     if ! grep -qF "exec zsh" "$HOME/.bashrc" 2>/dev/null; then
                         log_info "Adding 'exec zsh' fallback to ~/.bashrc..."
-                        run_or_dry bash -c "printf '\n# Switch to zsh (login shell could not be changed)\n[ -x \"$zsh_path\" ] && exec \"$zsh_path\" -l\n' >> \"\$HOME/.bashrc\""
+                        printf '\n# Switch to zsh (login shell could not be changed)\n[ -x "%s" ] && exec "%s" -l\n' \
+                            "$zsh_path" "$zsh_path" >> "$HOME/.bashrc"
                         log_success "~/.bashrc will launch zsh automatically"
                     else
                         log_success "~/.bashrc already has exec zsh fallback"
