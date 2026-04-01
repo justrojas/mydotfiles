@@ -180,17 +180,17 @@ handle_missing_tool() {
         return
     fi
 
-    echo "  [i] Install pinned version ($pinned_version)"
-    echo "  [s] Skip (continue without $tool)"
-    echo "  [a] Abort setup"
+    echo "  [1/i] Install pinned version ($pinned_version)"
+    echo "  [2/s] Skip (continue without $tool)"
+    echo "  [3/a] Abort setup"
     echo ""
-    read -rp "Choice [i/s/a]: " -n 1 choice
+    read -rp "Choice [1/2/3]: " -n 1 choice
     echo ""
 
     case "${choice,,}" in
-        i) $install_fn ;;
-        s) log_info "Skipping $tool" ;;
-        a) log_error "Setup aborted."; exit 1 ;;
+        1|i) $install_fn ;;
+        2|s) log_info "Skipping $tool" ;;
+        3|a) log_error "Setup aborted."; exit 1 ;;
         *) log_info "No valid choice — skipping $tool" ;;
     esac
 }
@@ -341,6 +341,21 @@ if $setup_zsh; then
             log_success ".zshrc linked"
         else
             log_error "No .zshrc found at $DOTFILES_DIR/config/zsh/.zshrc"
+        fi
+
+        # Set zsh as the login shell if not already set
+        zsh_path="$(command -v zsh)"
+        if [[ "$SHELL" != "$zsh_path" ]]; then
+            log_info "Setting login shell to zsh ($zsh_path)..."
+            # Ensure zsh is in /etc/shells
+            if ! grep -qxF "$zsh_path" /etc/shells; then
+                log_info "Adding $zsh_path to /etc/shells..."
+                run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells"
+            fi
+            run_or_dry chsh -s "$zsh_path" "$USER"
+            log_success "Login shell set to zsh — restart your session or open a new terminal"
+        else
+            log_success "Login shell is already zsh"
         fi
 
         # zsh plugins
