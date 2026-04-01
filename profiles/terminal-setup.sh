@@ -39,8 +39,8 @@ prompt_yn() {
         echo "$default"
         return
     fi
-    read -rp "$question" -n 1
-    echo
+    read -rp "$question" -n 1 </dev/tty
+    echo >&2
     echo "${REPLY:-$default}"
 }
 
@@ -184,8 +184,8 @@ handle_missing_tool() {
     echo "  [2/s] Skip (continue without $tool)"
     echo "  [3/a] Abort setup"
     echo ""
-    read -rp "Choice [1/2/3]: " -n 1 choice
-    echo ""
+    read -rp "Choice [1/2/3]: " -n 1 choice </dev/tty
+    echo "" >&2
 
     case "${choice,,}" in
         1|i) $install_fn ;;
@@ -272,7 +272,7 @@ log_step "neovim configuration (NvChad)"
 install_nvchad() {
     if command -v git >/dev/null 2>&1; then
         log_info "Cloning NvChad..."
-        run_or_dry git clone https://github.com/lsantos7654/NvChad.git "$HOME/.config/nvim"
+        run_or_dry git clone https://github.com/lsantos7654/dotnvim.git "$HOME/.config/nvim"
         log_success "NvChad installed — open nvim to trigger plugin bootstrap"
     else
         log_error "git not found — cannot clone NvChad"
@@ -286,8 +286,8 @@ if [[ -d "$HOME/.config/nvim" ]]; then
         echo "  [b] Backup existing config and install NvChad"
         echo "  [s] Skip (keep existing config)"
         echo ""
-        read -rp "Choice [b/s]: " -n 1 nvim_choice
-        echo ""
+        read -rp "Choice [b/s]: " -n 1 nvim_choice </dev/tty
+        echo "" >&2
     else
         nvim_choice="s"
     fi
