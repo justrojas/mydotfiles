@@ -99,6 +99,17 @@ install_apt_package() {
     log_success "$pkg installed"
 }
 
+# Install zoxide via official installer (apt version 0.4.x is too old for 'zoxide init zsh --cmd cd')
+install_zoxide() {
+    log_info "Installing zoxide via official installer..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
+    else
+        log_info "[DRY RUN] Would install zoxide via official installer"
+    fi
+    log_success "zoxide installed"
+}
+
 # Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)
 install_fzf() {
     log_info "Installing fzf via git..."
@@ -225,6 +236,12 @@ declare -A TOOL_VERSIONS=(
     [curl]="system"
     [npm]="system"
     [fzf]="system"
+    [eza]="system"
+    [batcat]="system"
+    [zoxide]="system"
+    [tree]="system"
+    [glow]="system"
+    [rsync]="system"
 )
 
 declare -A TOOL_INSTALLERS=(
@@ -236,14 +253,19 @@ declare -A TOOL_INSTALLERS=(
     [curl]="install_apt_package curl"
     [npm]="install_apt_package nodejs npm"
     [fzf]="install_fzf"
+    [eza]="install_apt_package eza"
+    [batcat]="install_apt_package bat"
+    [zoxide]="install_zoxide"
+    [tree]="install_apt_package tree"
+    [glow]="install_apt_package glow"
+    [rsync]="install_apt_package rsync"
 )
 
-for tool in tmux nvim kitty zsh git curl npm fzf; do
+for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync; do
     if command -v "$tool" >/dev/null 2>&1; then
         # For nvim, verify it meets the minimum pinned version
         if [[ "$tool" == "nvim" ]]; then
             nvim_actual=$(nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || echo "v0.0.0")
-            # Strip leading 'v' and compare major.minor
             actual_minor=$(echo "$nvim_actual" | grep -oP '\d+\.\d+' | head -1)
             pinned_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
             if [[ "$(printf '%s\n' "$actual_minor" "$pinned_minor" | sort -V | head -1)" != "$pinned_minor" && \
@@ -252,6 +274,16 @@ for tool in tmux nvim kitty zsh git curl npm fzf; do
                 handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
             else
                 log_success "$tool found ($nvim_actual)"
+            fi
+        # For zoxide, verify it's >= 0.9 (apt ships 0.4 which lacks --cmd flag)
+        elif [[ "$tool" == "zoxide" ]]; then
+            zoxide_actual=$(zoxide --version 2>/dev/null | grep -oP '\d+\.\d+' | head -1 || echo "0.0")
+            if [[ "$(printf '%s\n' "$zoxide_actual" "0.9" | sort -V | head -1)" != "0.9" && \
+                  "$zoxide_actual" != "0.9" ]]; then
+                log_warning "zoxide found but version $zoxide_actual is too old (need >= 0.9)"
+                handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
+            else
+                log_success "$tool found ($zoxide_actual)"
             fi
         else
             log_success "$tool found"
