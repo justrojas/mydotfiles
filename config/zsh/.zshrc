@@ -136,6 +136,9 @@ fi
 # ============================================================================
 # OH-MY-POSH
 # ============================================================================
+# Restore real terminal identity inside tmux so oh-my-posh renders correctly
+[[ -n "$TMUX" ]] && export TERM_PROGRAM="kitty"
+
 if command -v oh-my-posh >/dev/null 2>&1; then
   OMP_CONFIG="${DOTFILES}/config/zsh/oh-my-posh.omp.json"
   [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="${HOME}/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json"
@@ -143,3 +146,10 @@ if command -v oh-my-posh >/dev/null 2>&1; then
 fi
 
 [ -f ~/.env ] && source ~/.env
+
+# bun completions
+[ -s "/home/jrojas/.bun/_bun" ] && source "/home/jrojas/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
