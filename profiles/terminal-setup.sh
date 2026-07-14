@@ -33,6 +33,20 @@ done
 
 init_common "$@"
 
+# Total number of log_step calls in this script — drives the X/N counter
+STEP_TOTAL=9
+
+# ============================================================================
+# apt-get update deduplication — run at most once per invocation
+# ============================================================================
+_APT_UPDATED=0
+apt_update_once() {
+    if [[ $_APT_UPDATED -eq 0 && $DRY_RUN -eq 0 ]]; then
+        sudo apt-get update -qq
+        _APT_UPDATED=1
+    fi
+}
+
 # Prompt helper: non-interactive mode returns the default answer
 prompt_yn() {
     local question="$1" default="${2:-n}"
@@ -67,7 +81,7 @@ echo ""
 install_zsh() {
     log_info "Installing zsh ${PINNED_ZSH_VERSION} via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         sudo apt-get install -y zsh
     else
         log_info "[DRY RUN] Would run: sudo apt-get install -y zsh"
@@ -79,7 +93,7 @@ install_zsh() {
 install_kitty() {
     log_info "Installing kitty ${PINNED_KITTY_VERSION} via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         sudo apt-get install -y kitty
     else
         log_info "[DRY RUN] Would run: sudo apt-get install -y kitty"
@@ -92,7 +106,7 @@ install_apt_package() {
     local pkg="$1"
     log_info "Installing $pkg via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         if ! sudo apt-get install -y "$pkg" 2>&1; then
             log_error "apt could not install '$pkg' — package may not be in the default repos"
             return 1
@@ -107,7 +121,7 @@ install_apt_package() {
 install_nodejs() {
     log_info "Installing nodejs and npm via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         if ! sudo apt-get install -y nodejs npm 2>&1; then
             log_error "apt could not install nodejs/npm"
             return 1
@@ -122,7 +136,7 @@ install_nodejs() {
 install_eza() {
     log_info "Installing eza via gierens apt repo..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         sudo apt-get install -y gpg
         sudo mkdir -p /etc/apt/keyrings
         curl -fsSL https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
@@ -130,7 +144,7 @@ install_eza() {
         echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
             | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
         sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-        sudo apt-get update -qq
+        sudo apt-get update -qq   # must re-run after adding the new repo
         sudo apt-get install -y eza
     else
         log_info "[DRY RUN] Would add gierens apt repo and install eza"
@@ -142,7 +156,7 @@ install_eza() {
 install_glow() {
     log_info "Installing glow via charm.sh apt repo..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
+        apt_update_once
         sudo apt-get install -y gpg
         sudo mkdir -p /etc/apt/keyrings
         curl -fsSL https://repo.charm.sh/apt/gpg.key \
@@ -150,7 +164,7 @@ install_glow() {
         echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
             | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null
         sudo chmod 644 /etc/apt/keyrings/charm.gpg /etc/apt/sources.list.d/charm.list
-        sudo apt-get update -qq
+        sudo apt-get update -qq   # must re-run after adding the new repo
         sudo apt-get install -y glow
     else
         log_info "[DRY RUN] Would add charm.sh apt repo and install glow"
@@ -208,7 +222,7 @@ install_tmux() {
     trap "rm -rf $tmpdir" RETURN
 
     log_info "Installing build dependencies..."
-    sudo apt-get update -qq
+    apt_update_once
     sudo apt-get install -y build-essential libevent-dev libncurses-dev pkg-config bison
 
     local tarball="tmux-${PINNED_TMUX_VERSION}.tar.gz"
@@ -663,12 +677,49 @@ if [[ -d "$DOTFILES_DIR/config/oh-my-posh" ]]; then
         safe_symlink "$theme" "$HOME/.config/oh-my-posh/$(basename "$theme")"
     done
 
-    # Set current.omp.json to tokyonight_storm if it doesn't already exist
+    # Set current.omp.json → tokyonight_storm (always on fresh install;
+    # skip only if the user has already pointed it somewhere else via kt)
     omp_current="$HOME/.config/oh-my-posh/current.omp.json"
     omp_default="$HOME/.config/oh-my-posh/tokyonight_storm.omp.json"
-    if [[ ! -e "$omp_current" && -f "$omp_default" ]]; then
+    if [[ ! -L "$omp_current" ]]; then
+        # No symlink yet (fresh install or was deleted) — create it
         run_or_dry ln -sf "$omp_default" "$omp_current"
         log_info "Set default omp theme: tokyonight_storm"
+    elif [[ ! -e "$omp_current" ]]; then
+        # Symlink exists but is broken — fix it
+        run_or_dry ln -sf "$omp_default" "$omp_current"
+        log_info "Repaired broken omp current theme → tokyonight_storm"
+    else
+        log_success "omp current theme already set: $(basename "$(readlink "$omp_current")" .omp.json)"
+    fi
+
+    # Create kt↔omp mapping symlinks from theme-mappings.conf
+    mappings_file="$DOTFILES_DIR/config/oh-my-posh/theme-mappings.conf"
+    omp_cache_dir="$HOME/.cache/oh-my-posh/themes"
+    omp_gh_base="https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes"
+    if [[ -f "$mappings_file" ]]; then
+        log_info "Creating kitty↔omp theme mappings..."
+        mapped=0
+        while IFS='=' read -r kitty_theme omp_theme; do
+            # Skip comments and blank lines
+            [[ "$kitty_theme" =~ ^[[:space:]]*# || -z "${kitty_theme// }" ]] && continue
+            kitty_theme="${kitty_theme// /}"
+            omp_theme="${omp_theme// /}"
+            dest="$HOME/.config/oh-my-posh/${kitty_theme}.omp.json"
+            cache_src="$omp_cache_dir/${omp_theme}.omp.json"
+            if [[ -f "$cache_src" ]]; then
+                # Point to the already-cached stock theme
+                run_or_dry ln -sf "$cache_src" "$dest"
+                (( mapped++ )) || true
+            elif [[ $DRY_RUN -eq 0 ]]; then
+                # Cache not populated yet — download directly from GitHub
+                curl -fsSL "${omp_gh_base}/${omp_theme}.omp.json" -o "$dest" 2>/dev/null && \
+                    (( mapped++ )) || true
+            else
+                log_info "[DRY RUN] Would download omp theme ${omp_theme} for kitty theme ${kitty_theme}"
+            fi
+        done < "$mappings_file"
+        log_success "Mapped $mapped kitty themes to oh-my-posh themes"
     fi
 
     log_success "oh-my-posh themes linked"

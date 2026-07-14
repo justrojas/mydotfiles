@@ -39,8 +39,16 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
+STEP_NUM=0
+STEP_TOTAL=0  # Set this in the calling script for "X/N" display
+
 log_step() {
-    echo -e "\n${GREEN}==>${NC} ${BLUE}$*${NC}"
+    (( STEP_NUM++ )) || true
+    if [[ $STEP_TOTAL -gt 0 ]]; then
+        echo -e "\n${GREEN}==> [${STEP_NUM}/${STEP_TOTAL}]${NC} ${BLUE}$*${NC}"
+    else
+        echo -e "\n${GREEN}==>${NC} ${BLUE}$*${NC}"
+    fi
 }
 
 # ============================================================================
