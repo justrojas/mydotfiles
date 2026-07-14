@@ -541,12 +541,11 @@ if $setup_zsh; then
                 run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells" </dev/tty
             fi
             if [[ $DRY_RUN -eq 0 ]]; then
-                # chsh only works for local /etc/passwd users; fall back to usermod
-                # </dev/tty ensures password prompts reach the terminal
-                if chsh -s "$zsh_path" </dev/tty 2>/dev/null; then
-                    log_success "Login shell set to zsh — open a new terminal to apply"
-                elif sudo usermod -s "$zsh_path" "$USER" </dev/tty 2>/dev/null; then
+                # Prefer usermod (no interactive password prompt); fall back to chsh
+                if sudo usermod -s "$zsh_path" "$USER" 2>/dev/null; then
                     log_success "Login shell set to zsh via usermod — open a new terminal to apply"
+                elif chsh -s "$zsh_path" </dev/tty 2>/dev/null; then
+                    log_success "Login shell set to zsh — open a new terminal to apply"
                 else
                     log_warning "Could not change login shell automatically (non-local user?)"
                     # Fallback: add exec zsh to ~/.bashrc so bash immediately hands off to zsh
