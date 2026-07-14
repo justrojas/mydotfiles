@@ -203,7 +203,7 @@ install_fzf() {
         else
             git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
         fi
-        "$HOME/.fzf/install" --all --no-bash --no-fish --no-update-rc
+        "$HOME/.fzf/install" --all --no-bash --no-fish --no-update-rc 2>/dev/null
     else
         log_info "[DRY RUN] Would clone fzf to ~/.fzf and run install"
     fi
