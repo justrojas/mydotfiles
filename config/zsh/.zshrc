@@ -138,9 +138,12 @@ fi
 # ============================================================================
 # Restore real terminal identity inside tmux so oh-my-posh renders correctly
 [[ -n "$TMUX" ]] && export TERM_PROGRAM="kitty"
+# Fallback for any other multiplexer (herdr, etc.) that doesn't inherit it from Kitty
+export TERM_PROGRAM="${TERM_PROGRAM:-kitty}"
 
 if command -v oh-my-posh >/dev/null 2>&1; then
-  OMP_CONFIG="${DOTFILES}/config/zsh/oh-my-posh.omp.json"
+  OMP_CONFIG="${HOME}/.config/oh-my-posh/current.omp.json"
+  [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="${DOTFILES}/config/zsh/oh-my-posh.omp.json"
   [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="${HOME}/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json"
   eval "$(oh-my-posh init zsh --config "$OMP_CONFIG")"
 fi

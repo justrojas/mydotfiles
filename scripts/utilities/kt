@@ -118,6 +118,18 @@ set_theme() {
     else
         echo -e "${YELLOW}Restart kitty to see changes${NC}"
     fi
+
+    # Sync oh-my-posh theme — matched theme if one exists, bubbles otherwise
+    local omp_dir="$HOME/.config/oh-my-posh"
+    local omp_theme="$omp_dir/${theme_name}.omp.json"
+    local omp_current="$omp_dir/current.omp.json"
+    local omp_fallback="$HOME/.cache/oh-my-posh/themes/bubbles.omp.json"
+    if [[ -f "$omp_theme" ]]; then
+        ln -sf "$omp_theme" "$omp_current"
+        echo -e "${GREEN}OMP theme synced: ${theme_name}${NC}"
+    elif [[ -f "$omp_fallback" ]]; then
+        ln -sf "$omp_fallback" "$omp_current"
+    fi
 }
 
 # Function to search themes

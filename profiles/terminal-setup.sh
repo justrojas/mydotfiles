@@ -21,6 +21,7 @@ readonly PINNED_NVIM_VERSION="v0.11.6"
 readonly PINNED_KITTY_VERSION="0.21.2"
 readonly PINNED_ZSH_VERSION="5.8.1"
 readonly PINNED_OMP_VERSION="29.9.2"
+readonly PINNED_HERDR_VERSION="latest"
 
 # ============================================================================
 # Argument parsing
@@ -168,8 +169,18 @@ install_zoxide() {
     log_success "zoxide installed"
 }
 
-# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)
-install_fzf() {
+# Install herdr — agent-aware terminal multiplexer
+install_herdr() {
+    log_info "Installing herdr via official installer..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        curl -fsSL https://herdr.dev/install.sh | sh
+    else
+        log_info "[DRY RUN] Would install herdr via https://herdr.dev/install.sh"
+    fi
+    log_success "herdr installed"
+}
+
+# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)install_fzf() {
     log_info "Installing fzf via git..."
     if [[ $DRY_RUN -eq 0 ]]; then
         if [[ -d "$HOME/.fzf" ]]; then
@@ -300,6 +311,12 @@ declare -A TOOL_VERSIONS=(
     [tree]="system"
     [glow]="system"
     [rsync]="system"
+    [rg]="system"
+    [fdfind]="system"
+    [magick]="system"
+    [pip3]="system"
+    [wl-copy]="system"
+    [herdr]="$PINNED_HERDR_VERSION"
 )
 
 declare -A TOOL_INSTALLERS=(
@@ -317,9 +334,15 @@ declare -A TOOL_INSTALLERS=(
     [tree]="install_apt_package tree"
     [glow]="install_glow"
     [rsync]="install_apt_package rsync"
+    [rg]="install_apt_package ripgrep"
+    [fdfind]="install_apt_package fd-find"
+    [magick]="install_apt_package imagemagick"
+    [pip3]="install_apt_package python3-pip"
+    [wl-copy]="install_apt_package wl-clipboard"
+    [herdr]="install_herdr"
 )
 
-for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync; do
+for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr; do
     if command -v "$tool" >/dev/null 2>&1; then
         # For nvim, verify it meets the minimum pinned version
         if [[ "$tool" == "nvim" ]]; then
@@ -615,6 +638,46 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # ============================================================================
+# HERDR
+# ============================================================================
+log_step "herdr configuration"
+
+if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
+    ensure_dir "$HOME/.config/herdr"
+    safe_symlink "$DOTFILES_DIR/config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+    log_success "herdr config linked"
+else
+    log_warning "config/herdr not found — skipping"
+fi
+
+# ============================================================================
+# OH-MY-POSH THEMES
+# ============================================================================
+log_step "oh-my-posh themes"
+
+if [[ -d "$DOTFILES_DIR/config/oh-my-posh" ]]; then
+    ensure_dir "$HOME/.config/oh-my-posh"
+
+    # Symlink each custom theme file
+    for theme in "$DOTFILES_DIR/config/oh-my-posh"/*.omp.json; do
+        [[ -f "$theme" ]] || continue
+        safe_symlink "$theme" "$HOME/.config/oh-my-posh/$(basename "$theme")"
+    done
+
+    # Set current.omp.json to tokyonight_storm if it doesn't already exist
+    omp_current="$HOME/.config/oh-my-posh/current.omp.json"
+    omp_default="$HOME/.config/oh-my-posh/tokyonight_storm.omp.json"
+    if [[ ! -e "$omp_current" && -f "$omp_default" ]]; then
+        run_or_dry ln -sf "$omp_default" "$omp_current"
+        log_info "Set default omp theme: tokyonight_storm"
+    fi
+
+    log_success "oh-my-posh themes linked"
+else
+    log_warning "config/oh-my-posh not found — skipping"
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -628,9 +691,12 @@ log_info "What was configured:"
 [[ -d "$HOME/.config/nvim" ]]       && echo "  + neovim     (NvChad)"
 [[ -L "$HOME/.zshrc" ]]             && echo "  + zsh        ($DOTFILES_DIR/config/zsh/.zshrc)"
 [[ -L "$HOME/.local/bin/kt" ]]      && echo "  + utilities  (kt + others in ~/.local/bin)"
+[[ -L "$HOME/.config/herdr/config.toml" ]] && echo "  + herdr      ($DOTFILES_DIR/config/herdr/config.toml)"
+[[ -d "$HOME/.config/oh-my-posh" ]] && echo "  + oh-my-posh themes ($DOTFILES_DIR/config/oh-my-posh/)"
 echo ""
 log_info "Next steps:"
 [[ -L "$HOME/.tmux.conf" ]] && echo "  • Start tmux and press Ctrl+Space + I to install plugins"
+[[ -L "$HOME/.config/herdr/config.toml" ]] && echo "  • Launch herdr with 'herdr' — prefix is Ctrl+Space (mirrors tmux bindings)"
 [[ -d "$HOME/.config/nvim" ]] && echo "  • Open a NEW terminal, then run 'nvim' to bootstrap plugins"
 [[ -L "$HOME/.zshrc" ]] && echo "  • Open a new terminal (or run 'exec zsh') to activate zsh + oh-my-posh"
 echo ""

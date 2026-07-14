@@ -1,0 +1,131 @@
+onboarding = false
+
+[update]
+channel = "stable"
+
+[terminal]
+default_shell = "/bin/zsh"
+
+# =============================================================================
+# Keybindings — mirrors .tmux.conf with prefix changed to ctrl+space
+# =============================================================================
+[keys]
+prefix = "ctrl+space"
+
+# Core
+detach         = "prefix+q"
+toggle_sidebar = "prefix+b"
+copy_mode      = "prefix+["
+zoom           = "prefix+z"
+resize_mode    = "prefix+alt+r"
+goto           = "prefix+g"
+
+# Workspaces (herdr concept — no tmux equivalent)
+workspace_picker   = "prefix+w"
+new_workspace      = "prefix+shift+n"
+rename_workspace   = "prefix+shift+w"
+close_workspace    = "prefix+shift+d"
+switch_workspace   = "prefix+shift+1..9"
+navigate_workspace_up   = "up"
+navigate_workspace_down = "down"
+
+# Tabs (≈ tmux windows)
+new_tab    = "prefix+c"
+rename_tab = "prefix+r"
+close_tab  = "prefix+shift+x"
+
+# M-H / M-L  →  previous/next tab without prefix
+previous_tab = "alt+shift+h"
+next_tab     = "alt+shift+l"
+
+# M-1..9  →  direct alt+N jump, plus prefix+N
+switch_tab = ["prefix+1..9", "alt+1..9"]
+
+# Pane splits — h = below (tmux -v), v = right (tmux -h)
+split_horizontal = "prefix+h"
+split_vertical   = "prefix+v"
+close_pane       = "prefix+x"
+
+# Pane focus — mirrors vim-tmux-navigator ctrl+hjkl
+focus_pane_left  = "ctrl+h"
+focus_pane_down  = "ctrl+j"
+focus_pane_up    = "ctrl+k"
+focus_pane_right = "ctrl+l"
+
+# Pane swap — j/k swap down/up, H/L swap left/right
+swap_pane_down  = "prefix+j"
+swap_pane_up    = "prefix+k"
+swap_pane_left  = "prefix+shift+h"
+swap_pane_right = "prefix+shift+l"
+
+# Navigate mode (sidebar) — plain hjkl while the sidebar is focused
+navigate_pane_left  = "h"
+navigate_pane_down  = "j"
+navigate_pane_up    = "k"
+navigate_pane_right = "l"
+
+# Jump directly to an agent pane by index
+focus_agent = "prefix+alt+1..9"
+
+# =============================================================================
+# Custom commands — AI / hivemind workflow
+# =============================================================================
+
+# Open a new opencode pane
+[[keys.command]]
+key         = "prefix+o"
+type        = "pane"
+command     = "opencode"
+description = "launch opencode"
+
+# List enabled hivemind agents (quick reference)
+[[keys.command]]
+key         = "prefix+alt+a"
+type        = "pane"
+command     = "opencode --print 'list all enabled hivemind agents with their descriptions'"
+description = "list hivemind agents"
+
+# Open lazygit
+[[keys.command]]
+key         = "prefix+alt+g"
+type        = "pane"
+command     = "lazygit"
+description = "open lazygit"
+
+# =============================================================================
+# Theme
+# =============================================================================
+[theme]
+name = "gruvbox"
+
+# =============================================================================
+# UI / sidebar
+# =============================================================================
+[ui]
+sidebar_width    = 32
+mouse_capture    = true
+pane_borders     = true
+pane_gaps        = true
+confirm_close    = true
+prompt_new_tab_name = false
+# Show blocked/working/done labels directly on pane borders
+show_agent_labels_on_pane_borders = true
+# Sort agent panel: blocked agents bubble to the top
+agent_panel_sort = "priority"
+
+# In-UI toast when any agent goes blocked or done
+[ui.toast]
+delivery       = "herdr"
+delay_seconds  = 0
+
+[ui.toast.herdr]
+position = "bottom-right"
+
+# Clipboard feedback
+[ui.toast.clipboard]
+enabled  = true
+position = "bottom-center"
+
+# Disable sound — change to true if you want audio alerts
+[ui.sound]
+enabled = false
