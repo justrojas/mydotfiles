@@ -194,7 +194,8 @@ install_herdr() {
     log_success "herdr installed"
 }
 
-# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)install_fzf() {
+# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)
+install_fzf() {
     log_info "Installing fzf via git..."
     if [[ $DRY_RUN -eq 0 ]]; then
         if [[ -d "$HOME/.fzf" ]]; then
