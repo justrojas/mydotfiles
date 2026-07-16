@@ -36,7 +36,6 @@ apt_install \
     git wget curl unzip \
     zsh \
     tmux \
-    kitty \
     fzf \
     bat \
     btop nvtop \
@@ -49,6 +48,57 @@ apt_install \
     autoconf automake libtool \
     build-essential libevent-dev libncurses5-dev libncursesw5-dev \
     gpg
+
+# ============================================================================
+# kitty (pinned modern release — NOT apt)
+# ============================================================================
+# apt on Ubuntu 22.04 only ships kitty 0.21.2, which has a Kitty
+# keyboard-protocol bug that makes Enter/Tab/Backspace fire twice inside
+# apps like herdr (fixed upstream in 0.33.0). Install a modern release from
+# GitHub into ~/.local/kitty.app instead.
+readonly KITTY_VERSION="0.47.4"
+log_step "Installing kitty ${KITTY_VERSION}"
+kitty_actual=$(kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "0.0.0")
+if command -v kitty >/dev/null 2>&1 && \
+   [[ "$(printf '%s\n' "$kitty_actual" "0.33.0" | sort -V | head -1)" == "0.33.0" || \
+      "$kitty_actual" == "0.33.0" ]]; then
+    log_success "kitty already installed ($kitty_actual)"
+elif [[ $DRY_RUN -eq 1 ]]; then
+    log_info "[DRY RUN] Would install kitty ${KITTY_VERSION} to ~/.local/kitty.app"
+else
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)        tarch="x86_64" ;;
+        aarch64|arm64) tarch="arm64" ;;
+        *) log_error "Unsupported architecture '$arch' for kitty tarball"; tarch="" ;;
+    esac
+    if [[ -n "$tarch" ]]; then
+        kitty_tmp=$(mktemp -d)
+        tarball="kitty-${KITTY_VERSION}-${tarch}.txz"
+        url="https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/${tarball}"
+        log_info "Downloading kitty ${KITTY_VERSION} (${tarch})..."
+        curl -fsSL "$url" -o "$kitty_tmp/$tarball"
+        ensure_dir "$HOME/.local/bin"
+        rm -rf "$HOME/.local/kitty.app"
+        mkdir -p "$HOME/.local/kitty.app"
+        tar -xJf "$kitty_tmp/$tarball" -C "$HOME/.local/kitty.app"
+        ln -sf "$HOME/.local/kitty.app/bin/kitty"  "$HOME/.local/bin/kitty"
+        ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
+        # Desktop integration so the app-menu launcher uses the new binary
+        # (otherwise a stale /usr/bin/kitty keeps opening).
+        app_dst="$HOME/.local/share/applications"
+        ensure_dir "$app_dst"
+        for desk in kitty.desktop kitty-open.desktop; do
+            [ -f "$HOME/.local/kitty.app/share/applications/$desk" ] || continue
+            cp "$HOME/.local/kitty.app/share/applications/$desk" "$app_dst/$desk"
+            sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$app_dst/$desk"
+            sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$app_dst/$desk"
+        done
+        update-desktop-database "$app_dst" 2>/dev/null || true
+        rm -rf "$kitty_tmp"
+        log_success "kitty ${KITTY_VERSION} installed to ~/.local/kitty.app"
+    fi
+fi
 
 # ============================================================================
 # eza (modern ls replacement)

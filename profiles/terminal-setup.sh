@@ -18,7 +18,7 @@ source "$DOTFILES_DIR/lib/common.sh"
 # ============================================================================
 readonly PINNED_TMUX_VERSION="3.4"
 readonly PINNED_NVIM_VERSION="v0.11.6"
-readonly PINNED_KITTY_VERSION="0.21.2"
+readonly PINNED_KITTY_VERSION="0.47.4"
 readonly PINNED_ZSH_VERSION="5.8.1"
 readonly PINNED_OMP_VERSION="29.9.2"
 readonly PINNED_HERDR_VERSION="latest"
@@ -27,14 +27,16 @@ readonly PINNED_HERDR_VERSION="latest"
 # Argument parsing
 # ============================================================================
 NONINTERACTIVE=0
+UPDATE_MODE=0
 for arg in "$@"; do
     [[ "$arg" == "--non-interactive" ]] && NONINTERACTIVE=1
+    [[ "$arg" == "--update" ]]          && UPDATE_MODE=1
 done
 
 init_common "$@"
 
 # Total number of log_step calls in this script — drives the X/N counter
-STEP_TOTAL=9
+STEP_TOTAL=11
 
 # ============================================================================
 # apt-get update deduplication — run at most once per invocation
@@ -70,6 +72,7 @@ echo "======================================"
 echo ""
 log_info "Dotfiles: $DOTFILES_DIR"
 [[ $NONINTERACTIVE -eq 1 ]] && log_info "Running non-interactively (safe defaults)"
+[[ $UPDATE_MODE -eq 1 ]]    && log_info "Update mode — pinned tools will be upgraded if stale"
 [[ $DRY_RUN -eq 1 ]]        && log_warning "Dry-run mode — no changes will be made"
 echo ""
 
@@ -89,16 +92,63 @@ install_zsh() {
     log_success "zsh installed"
 }
 
-# Install kitty via apt (0.21.2 available on Ubuntu 22.04)
+# Install kitty from the official release tarball into ~/.local/kitty.app.
+#
+# NOTE: apt on Ubuntu 22.04 only ships kitty 0.21.2, which has a Kitty
+# keyboard-protocol bug that makes Enter/Tab/Backspace fire twice inside
+# apps like herdr (fixed upstream in 0.33.0). We therefore pin a modern
+# version from GitHub releases instead of using apt.
 install_kitty() {
-    log_info "Installing kitty ${PINNED_KITTY_VERSION} via apt..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        sudo apt-get install -y kitty
-    else
-        log_info "[DRY RUN] Would run: sudo apt-get install -y kitty"
+    log_info "Installing kitty ${PINNED_KITTY_VERSION} from official release tarball..."
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log_info "[DRY RUN] Would install kitty ${PINNED_KITTY_VERSION} to ~/.local/kitty.app"
+        return 0
     fi
-    log_success "kitty installed"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    trap "rm -rf $tmpdir" RETURN
+
+    local arch tarch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)  tarch="x86_64" ;;
+        aarch64|arm64) tarch="arm64" ;;
+        *) log_error "Unsupported architecture '$arch' for kitty tarball"; return 1 ;;
+    esac
+
+    local tarball="kitty-${PINNED_KITTY_VERSION}-${tarch}.txz"
+    local url="https://github.com/kovidgoyal/kitty/releases/download/v${PINNED_KITTY_VERSION}/${tarball}"
+
+    log_info "Downloading kitty ${PINNED_KITTY_VERSION} (${tarch})..."
+    curl -fsSL "$url" -o "$tmpdir/$tarball"
+
+    ensure_dir "$HOME/.local/bin"
+    rm -rf "$HOME/.local/kitty.app"
+    mkdir -p "$HOME/.local/kitty.app"
+    tar -xJf "$tmpdir/$tarball" -C "$HOME/.local/kitty.app"
+
+    # Symlink onto PATH (~/.local/bin sits ahead of /usr/bin, so this wins
+    # over any stale apt-installed kitty).
+    ln -sf "$HOME/.local/kitty.app/bin/kitty"  "$HOME/.local/bin/kitty"
+    ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
+
+    # Desktop integration: install launcher entries pointing at the new binary
+    # into the user applications dir (overrides any system /usr/share entry).
+    # Without this, the app-menu/panel launcher keeps opening an old apt kitty,
+    # which reintroduces the herdr double-keypress bug.
+    local app_dst="$HOME/.local/share/applications"
+    ensure_dir "$app_dst"
+    local desk
+    for desk in kitty.desktop kitty-open.desktop; do
+        [[ -f "$HOME/.local/kitty.app/share/applications/$desk" ]] || continue
+        cp "$HOME/.local/kitty.app/share/applications/$desk" "$app_dst/$desk"
+        sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$app_dst/$desk"
+        sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$app_dst/$desk"
+    done
+    update-desktop-database "$app_dst" 2>/dev/null || true
+
+    log_success "kitty ${PINNED_KITTY_VERSION} installed to ~/.local/kitty.app"
 }
 
 # Install a package via apt — returns 1 (non-fatal) if the package is not found
@@ -311,6 +361,48 @@ handle_missing_tool() {
 # ============================================================================
 log_step "Checking for required tools"
 
+# Returns the installed version string for tools we track precisely; empty for others.
+get_installed_version() {
+    case "$1" in
+        nvim)  nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || true ;;
+        tmux)  tmux -V 2>/dev/null | grep -oP '\d+\.\d+[a-z]?' | head -1 || true ;;
+        kitty) kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true ;;
+        *)     echo "" ;;
+    esac
+}
+
+# Returns 0 (up-to-date / no check needed) or 1 (stale / needs upgrade).
+is_tool_outdated() {
+    local tool="$1"
+    case "$tool" in
+        nvim)
+            local actual pinned
+            actual=$(get_installed_version nvim)
+            pinned="$PINNED_NVIM_VERSION"
+            [[ -z "$actual" ]] && return 1
+            local a_minor p_minor
+            a_minor=$(echo "$actual" | grep -oP '\d+\.\d+' | head -1)
+            p_minor=$(echo "$pinned"  | grep -oP '\d+\.\d+' | head -1)
+            [[ "$(printf '%s\n' "$a_minor" "$p_minor" | sort -V | head -1)" != "$p_minor" ]] && return 1
+            return 0
+            ;;
+        tmux)
+            local actual="$( get_installed_version tmux )"
+            [[ -z "$actual" ]] && return 1
+            [[ "$(printf '%s\n' "$actual" "$PINNED_TMUX_VERSION" | sort -V | head -1)" != "$PINNED_TMUX_VERSION" ]] && return 1
+            return 0
+            ;;
+        kitty)
+            local actual="$( get_installed_version kitty )"
+            [[ -z "$actual" ]] && return 1
+            # Minimum acceptable kitty: 0.33.0 (keyboard-protocol fix)
+            [[ "$(printf '%s\n' "$actual" "0.33.0" | sort -V | head -1)" != "0.33.0" ]] && return 1
+            return 0
+            ;;
+        *)  return 0 ;;  # system tools — no pinned version to enforce
+    esac
+}
+
 declare -A TOOL_VERSIONS=(
     [tmux]="$PINNED_TMUX_VERSION"
     [nvim]="$PINNED_NVIM_VERSION"
@@ -359,30 +451,24 @@ declare -A TOOL_INSTALLERS=(
 
 for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr; do
     if command -v "$tool" >/dev/null 2>&1; then
-        # For nvim, verify it meets the minimum pinned version
-        if [[ "$tool" == "nvim" ]]; then
-            nvim_actual=$(nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || echo "v0.0.0")
-            actual_minor=$(echo "$nvim_actual" | grep -oP '\d+\.\d+' | head -1)
-            pinned_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
-            if [[ "$(printf '%s\n' "$actual_minor" "$pinned_minor" | sort -V | head -1)" != "$pinned_minor" && \
-                  "$actual_minor" != "$pinned_minor" ]]; then
-                log_warning "nvim found but version $nvim_actual is older than pinned $PINNED_NVIM_VERSION"
-                handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
+        if is_tool_outdated "$tool"; then
+            actual=$(get_installed_version "$tool")
+            pinned="${TOOL_VERSIONS[$tool]}"
+            log_warning "$tool is outdated (installed: ${actual:-?}, pinned: $pinned)"
+            if [[ $UPDATE_MODE -eq 1 ]]; then
+                log_info "Upgrading $tool..."
+                ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
             else
-                log_success "$tool found ($nvim_actual)"
-            fi
-        # For zoxide, verify it's >= 0.9 (apt ships 0.4 which lacks --cmd flag)
-        elif [[ "$tool" == "zoxide" ]]; then
-            zoxide_actual=$(zoxide --version 2>/dev/null | grep -oP '\d+\.\d+' | head -1 || echo "0.0")
-            if [[ "$(printf '%s\n' "$zoxide_actual" "0.9" | sort -V | head -1)" != "0.9" && \
-                  "$zoxide_actual" != "0.9" ]]; then
-                log_warning "zoxide found but version $zoxide_actual is too old (need >= 0.9)"
-                handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
-            else
-                log_success "$tool found ($zoxide_actual)"
+                log_info "Re-run with --update to upgrade automatically"
             fi
         else
-            log_success "$tool found"
+            # For tools with a detectable version, show it; otherwise just confirm presence
+            actual=$(get_installed_version "$tool")
+            if [[ -n "$actual" ]]; then
+                log_success "$tool found ($actual)"
+            else
+                log_success "$tool found"
+            fi
         fi
     else
         handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
@@ -620,6 +706,31 @@ if $setup_zsh; then
 fi
 
 # ============================================================================
+# BASH (work shell) + bash<->zsh toggle preference
+# ============================================================================
+log_step "bash configuration"
+
+if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
+    safe_symlink "$DOTFILES_DIR/config/bash/.bashrc"       "$HOME/.bashrc"
+    safe_symlink "$DOTFILES_DIR/config/bash/.bash_profile" "$HOME/.bash_profile"
+    log_success "bash config linked (.bashrc, .bash_profile)"
+
+    # Seed the shell preference (defaults to zsh — the author's preference).
+    # Interactive shells auto-switch toward this; `shell-toggle` flips it.
+    ensure_dir "$HOME/.config/shell"
+    if [[ ! -f "$HOME/.config/shell/preferred" ]]; then
+        if [[ $DRY_RUN -eq 0 ]]; then
+            echo "zsh" > "$HOME/.config/shell/preferred"
+        fi
+        log_info "Set default shell preference: zsh (run 'shell-toggle' to switch to bash)"
+    else
+        log_success "shell preference already set: $(cat "$HOME/.config/shell/preferred" 2>/dev/null)"
+    fi
+else
+    log_error "bash config not found at $DOTFILES_DIR/config/bash"
+fi
+
+# ============================================================================
 # Utility scripts → ~/.local/bin
 # ============================================================================
 log_step "Utility scripts"
@@ -729,21 +840,94 @@ else
 fi
 
 # ============================================================================
+# VERIFICATION
+# ============================================================================
+log_step "Verifying installation"
+
+VERIFY_PASS=0
+VERIFY_FAIL=0
+
+_vok()  { printf "  ${GREEN}✓${NC}  %-38s ${GREEN}%s${NC}\n"  "$1" "${2:-ok}"; (( VERIFY_PASS++ )) || true; }
+_vfail(){ printf "  ${RED}✗${NC}  %-38s ${RED}%s${NC}\n"    "$1" "${2:-MISSING}"; (( VERIFY_FAIL++ )) || true; }
+
+verify_symlink() {
+    local label="$1" path="$2"
+    if [[ -L "$path" && -e "$path" ]]; then _vok  "$label"
+    elif [[ -L "$path" ]];                  then _vfail "$label" "broken symlink → $(readlink "$path")"
+    else                                         _vfail "$label"
+    fi
+}
+
+verify_cmd() {
+    local label="$1" cmd="$2"
+    if command -v "$cmd" >/dev/null 2>&1; then _vok "$label" "$(command -v "$cmd")"
+    else                                        _vfail "$label"
+    fi
+}
+
+echo ""
+echo "  Symlinks"
+verify_symlink ".zshrc"                    "$HOME/.zshrc"
+verify_symlink ".tmux.conf"                "$HOME/.tmux.conf"
+verify_symlink ".config/kitty"             "$HOME/.config/kitty"
+verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+verify_symlink ".local/bin/kt"             "$HOME/.local/bin/kt"
+
+echo ""
+echo "  Tools in PATH"
+verify_cmd "zsh"          zsh
+verify_cmd "tmux"         tmux
+verify_cmd "kitty"        kitty
+verify_cmd "nvim"         nvim
+verify_cmd "oh-my-posh"   oh-my-posh
+verify_cmd "herdr"        herdr
+verify_cmd "fzf"          fzf
+verify_cmd "eza"          eza
+verify_cmd "zoxide"       zoxide
+verify_cmd "bat / batcat" batcat
+verify_cmd "rg"           rg
+
+echo ""
+echo "  Shell environment"
+# Oh My Zsh
+if [[ -d "$HOME/.oh-my-zsh" ]]; then _vok  "Oh My Zsh installed"
+else                                  _vfail "Oh My Zsh installed"
+fi
+
+# Login shell
+login_shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7 || echo "")
+if [[ "$login_shell" == "$(command -v zsh)" ]]; then _vok "Login shell is zsh"
+else _vfail "Login shell is zsh" "current: ${login_shell:-unknown}"; fi
+
+# omp theme
+omp_current="$HOME/.config/oh-my-posh/current.omp.json"
+if [[ -L "$omp_current" && -e "$omp_current" ]]; then
+    _vok "omp current theme" "$(basename "$(readlink "$omp_current")" .omp.json)"
+elif [[ -L "$omp_current" ]]; then
+    _vfail "omp current theme" "broken → $(readlink "$omp_current")"
+else
+    _vfail "omp current theme"
+fi
+
+# NvChad
+if [[ -d "$HOME/.config/nvim" ]]; then _vok "NvChad config present"
+else                                    _vfail "NvChad config present"
+fi
+
+echo ""
+if [[ $VERIFY_FAIL -eq 0 ]]; then
+    log_success "All checks passed ($VERIFY_PASS/$((VERIFY_PASS + VERIFY_FAIL)))"
+else
+    log_warning "$VERIFY_FAIL check(s) failed — see above"
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
 log_success "======================================"
 log_success "  Terminal Setup Complete!"
 log_success "======================================"
-echo ""
-log_info "What was configured:"
-[[ -L "$HOME/.tmux.conf" ]]         && echo "  + tmux       ($DOTFILES_DIR/config/tmux/tmux.conf)"
-[[ -L "$HOME/.config/kitty" ]]      && echo "  + kitty      ($DOTFILES_DIR/config/kitty/)"
-[[ -d "$HOME/.config/nvim" ]]       && echo "  + neovim     (NvChad)"
-[[ -L "$HOME/.zshrc" ]]             && echo "  + zsh        ($DOTFILES_DIR/config/zsh/.zshrc)"
-[[ -L "$HOME/.local/bin/kt" ]]      && echo "  + utilities  (kt + others in ~/.local/bin)"
-[[ -L "$HOME/.config/herdr/config.toml" ]] && echo "  + herdr      ($DOTFILES_DIR/config/herdr/config.toml)"
-[[ -d "$HOME/.config/oh-my-posh" ]] && echo "  + oh-my-posh themes ($DOTFILES_DIR/config/oh-my-posh/)"
 echo ""
 log_info "Next steps:"
 [[ -L "$HOME/.tmux.conf" ]] && echo "  • Start tmux and press Ctrl+Space + I to install plugins"
