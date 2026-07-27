@@ -39,8 +39,13 @@ shell-toggle() {
 }
 
 # One-off switches that do NOT change the saved preference.
-tobash() { exec bash -l; }
-tozsh()  { exec zsh -l; }
+# We set SHELL_SWITCH_GUARD first so the target shell's auto-switch block below
+# does NOT immediately bounce us back to the preferred shell. Without this, a
+# session started *directly* in the preferred shell (login shell, `kitty --shell
+# zsh`, herdr `default_shell`, etc.) never set the guard, so `tobash` would exec
+# bash, which would then re-exec straight back into zsh — leaving you stuck.
+tobash() { export SHELL_SWITCH_GUARD=1; exec bash -l; }
+tozsh()  { export SHELL_SWITCH_GUARD=1; exec zsh -l; }
 
 # Show current + preferred.
 shell-pref() {
