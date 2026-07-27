@@ -2,7 +2,10 @@
 # Shell-agnostic pieces live in $DOTFILES/config/shell/*.sh (shared with bash).
 
 # --- Resolve dotfiles root from this file's (symlinked) location -----------
-export DOTFILES="$(cd "$(dirname "$(readlink -f "${(%):-%x}")")"/../.. && pwd)"
+# Pure-zsh path resolution (:A resolves symlinks like `readlink -f`, :h = dirname).
+# Avoids shelling out to realpath/readlink, which printed "realpath: missing
+# operand" on boxes where ${(%):-%x} expanded empty during early startup.
+export DOTFILES="${${(%):-%x}:A:h:h:h}"
 
 # --- Shell preference / bash<->zsh toggle (may exec away) -------------------
 source "$DOTFILES/config/shell/switch.sh"
