@@ -97,7 +97,8 @@ install_zsh() {
 # NOTE: apt on Ubuntu 22.04 only ships kitty 0.21.2, which has a Kitty
 # keyboard-protocol bug that makes Enter/Tab/Backspace fire twice inside
 # apps like herdr (fixed upstream in 0.33.0). We therefore pin a modern
-# version from GitHub releases instead of using apt.
+# version from GitHub releases instead of using apt, AND purge the apt
+# package at the end of this function so the buggy binary can never win.
 install_kitty() {
     log_info "Installing kitty ${PINNED_KITTY_VERSION} from official release tarball..."
     if [[ $DRY_RUN -eq 1 ]]; then
@@ -147,6 +148,23 @@ install_kitty() {
         sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$app_dst/$desk"
     done
     update-desktop-database "$app_dst" 2>/dev/null || true
+
+    # Purge the apt-provided kitty (0.21.2 on Ubuntu 22.04). Its Kitty
+    # keyboard-protocol bug double-fires Backspace/Enter/Tab inside herdr, and it
+    # keeps reappearing on fresh workstations because the panel/app-menu (or a
+    # login shell whose PATH lacks ~/.local/bin) can still launch /usr/bin/kitty
+    # before the ~/.local override wins. Removing the package is the only way to
+    # guarantee the buggy binary can never be launched. We keep kitty-terminfo so
+    # the xterm-kitty terminfo entry stays available system-wide.
+    if [[ $DRY_RUN -eq 0 ]]; then
+        if dpkg -l kitty 2>/dev/null | grep -q '^ii'; then
+            log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
+            sudo apt-get purge -y kitty 2>/dev/null \
+                || log_warning "Could not purge apt kitty — remove /usr/bin/kitty manually"
+        fi
+    else
+        log_info "[DRY RUN] Would purge apt-provided kitty if installed"
+    fi
 
     log_success "kitty ${PINNED_KITTY_VERSION} installed to ~/.local/kitty.app"
 }
