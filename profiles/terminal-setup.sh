@@ -22,6 +22,9 @@ readonly PINNED_KITTY_VERSION="0.47.4"
 readonly PINNED_ZSH_VERSION="5.8.1"
 readonly PINNED_OMP_VERSION="29.9.2"
 readonly PINNED_HERDR_VERSION="latest"
+readonly PINNED_INSHELLISENSE_VERSION="0.0.1"
+# Node major used to run inshellisense (needs Node >=20; repo default nvm node is 18)
+readonly INSHELLISENSE_NODE_MAJOR="22"
 
 # ============================================================================
 # Argument parsing
@@ -198,6 +201,53 @@ install_nodejs() {
         log_info "[DRY RUN] Would run: sudo apt-get install -y nodejs npm"
     fi
     log_success "nodejs and npm installed"
+}
+
+# Install inshellisense — Microsoft's IDE-style shell autocomplete (npm).
+# Needs Node >=20, but the repo's default nvm node is 18, so we install/use a
+# Node 22 via nvm and drop a launcher wrapper in ~/.local/bin/is that pins the
+# runtime — this keeps `is` working regardless of the active (lazy-loaded) nvm node.
+install_inshellisense() {
+    log_info "Installing inshellisense (npm, requires Node >=${INSHELLISENSE_NODE_MAJOR%%.*})..."
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log_info "[DRY RUN] Would nvm-install Node ${INSHELLISENSE_NODE_MAJOR}, npm i -g @microsoft/inshellisense@${PINNED_INSHELLISENSE_VERSION}, and write ~/.local/bin/is"
+        return 0
+    fi
+
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # Bootstrap nvm if absent (repo assumes it, but be robust on fresh machines).
+    if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
+        log_info "nvm not found — installing nvm..."
+        curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
+            || { log_error "nvm install failed — cannot install inshellisense"; return 1; }
+    fi
+    # shellcheck disable=SC1091
+    source "$NVM_DIR/nvm.sh"
+
+    # Ensure a Node >=20 is available.
+    if [[ "$(nvm version "$INSHELLISENSE_NODE_MAJOR" 2>/dev/null)" == "N/A" ]]; then
+        log_info "Installing Node ${INSHELLISENSE_NODE_MAJOR} via nvm..."
+        nvm install "$INSHELLISENSE_NODE_MAJOR" || { log_error "nvm install node failed"; return 1; }
+    fi
+    nvm use "$INSHELLISENSE_NODE_MAJOR" >/dev/null
+
+    npm i -g "@microsoft/inshellisense@${PINNED_INSHELLISENSE_VERSION}" \
+        || { log_error "npm could not install inshellisense"; return 1; }
+
+    # Launcher wrapper pinned to this node runtime.
+    local nodebin isjs
+    nodebin="$(nvm which "$INSHELLISENSE_NODE_MAJOR")"
+    isjs="$(readlink -f "$(dirname "$nodebin")/is")"   # resolves the npm bin symlink to bin.js
+    ensure_dir "$HOME/.local/bin"
+    printf '#!/usr/bin/env bash\n# inshellisense launcher — pins to Node >=20 (managed by dotfiles)\nexec "%s" "%s" "$@"\n' \
+        "$nodebin" "$isjs" > "$HOME/.local/bin/is"
+    chmod +x "$HOME/.local/bin/is"
+
+    # Generate the per-shell init snippets that .zshrc/.bashrc source.
+    "$HOME/.local/bin/is" init zsh  >/dev/null 2>&1 || true
+    "$HOME/.local/bin/is" init bash >/dev/null 2>&1 || true
+
+    log_success "inshellisense installed (is $("$HOME/.local/bin/is" --version 2>/dev/null))"
 }
 
 # Install eza via the official gierens apt repo (not in default Ubuntu 22.04 repos)
@@ -442,6 +492,7 @@ declare -A TOOL_VERSIONS=(
     [pip3]="system"
     [wl-copy]="system"
     [herdr]="$PINNED_HERDR_VERSION"
+    [is]="$PINNED_INSHELLISENSE_VERSION"
 )
 
 declare -A TOOL_INSTALLERS=(
@@ -465,9 +516,10 @@ declare -A TOOL_INSTALLERS=(
     [pip3]="install_apt_package python3-pip"
     [wl-copy]="install_apt_package wl-clipboard"
     [herdr]="install_herdr"
+    [is]="install_inshellisense"
 )
 
-for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr; do
+for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr is; do
     if command -v "$tool" >/dev/null 2>&1; then
         if is_tool_outdated "$tool"; then
             actual=$(get_installed_version "$tool")
