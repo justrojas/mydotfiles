@@ -21,15 +21,6 @@ typeset -U path
 source "$DOTFILES/config/shell/env.sh"
 source "$DOTFILES/config/shell/aliases.sh"
 
-# --- inshellisense: IDE-style autocomplete (on-demand by default) ----------
-# Run `is` to start an autocomplete session when you want it. Auto-start is
-# OFF by default because wrapping every interactive shell nests badly inside
-# multiplexers (herdr/tmux) and TUIs (opencode/hivemind) -> screen artifacting.
-# To opt back into auto-start: `export INSHELLISENSE_AUTOSTART=1`.
-if [[ -n "$INSHELLISENSE_AUTOSTART" && -z "$ISTERM" && -f ~/.inshellisense/init/zsh/init.zsh ]]; then
-    source ~/.inshellisense/init/zsh/init.zsh
-fi
-
 # --- Work-specific (untracked) ---------------------------------------------
 [[ -f ~/.zshrc.work ]] && source ~/.zshrc.work
 

@@ -21,15 +21,6 @@ shopt -s histappend checkwinsize
 source "$DOTFILES/config/shell/env.sh"
 source "$DOTFILES/config/shell/aliases.sh"
 
-# --- inshellisense: IDE-style autocomplete (on-demand by default) ----------
-# Run `is` to start an autocomplete session when you want it. Auto-start is OFF
-# by default because wrapping every interactive shell nests badly inside
-# multiplexers (herdr/tmux) and TUIs -> screen artifacting.
-# To opt back into auto-start: `export INSHELLISENSE_AUTOSTART=1`.
-if [ -n "$INSHELLISENSE_AUTOSTART" ] && [ -z "$ISTERM" ] && [ -f ~/.inshellisense/init/bash/init.sh ]; then
-    source ~/.inshellisense/init/bash/init.sh
-fi
-
 # --- Work-specific (untracked) ---------------------------------------------
 [ -f ~/.bashrc.work ] && source ~/.bashrc.work
 
