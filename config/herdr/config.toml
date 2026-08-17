@@ -4,7 +4,8 @@ onboarding = false
 channel = "stable"
 
 [terminal]
-default_shell = "/bin/zsh"
+# bash is the primary interactive shell; `tozsh` / `shell-toggle` switch to zsh.
+default_shell = "/bin/bash"
 
 # =============================================================================
 # Keybindings — mirrors .tmux.conf with prefix changed to ctrl+space

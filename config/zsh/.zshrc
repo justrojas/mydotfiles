@@ -7,6 +7,9 @@
 # operand" on boxes where ${(%):-%x} expanded empty during early startup.
 export DOTFILES="${${(%):-%x}:A:h:h:h}"
 
+# NOTE: secrets (API tokens, JWTs, etc.) belong in ~/.env, which is untracked
+# and sourced at the bottom of this file. Never hardcode them here.
+
 # --- Shell preference / bash<->zsh toggle (may exec away) -------------------
 source "$DOTFILES/config/shell/switch.sh"
 
@@ -99,8 +102,8 @@ compdef _tmux_sessions tkill
 
 # --- Deferred loading -------------------------------------------------------
 deferred_load() {
-    [[ -f "$DOTFILES/config/zsh/docker_functions.bash" ]] && \
-        source "$DOTFILES/config/zsh/docker_functions.bash"
+    [[ -f "$DOTFILES/config/shell/docker_functions.bash" ]] && \
+        source "$DOTFILES/config/shell/docker_functions.bash"
 }
 zmodload zsh/sched 2>/dev/null && sched +1 deferred_load
 

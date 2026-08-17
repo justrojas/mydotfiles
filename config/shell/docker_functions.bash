@@ -10,20 +10,18 @@
 # <container> can be the container ID or name.
 
 #### Color helpers ####
-export YELLOW='\033[0;33m'
-export RED='\033[0;31m'
-export BLUE='\033[0;34m'
-export GREEN='\033[0;32m'
-export GRAY='\033[0;37m'
-export CYAN='\033[0;36m'
-export LYELLOW='\033[1;33m'
-export LBLUE='\033[1;34m'
-export LGREEN='\033[1;32m'
-export LGRAY='\033[1;37m'
-export NC='\033[0m'
+# Deliberately NOT exported. These used to be `export`ed, which pushed eleven
+# variables named RED/GREEN/BLUE/YELLOW/NC/... into the environment of every
+# child process of an interactive shell — including install scripts, which
+# declare their own `readonly RED=...` in lib/common.sh with different values.
+# Shell-local is all that's needed; only these four are actually used.
+_DF_LYELLOW='\033[1;33m'
+_DF_LBLUE='\033[1;34m'
+_DF_LGRAY='\033[1;37m'
+_DF_NC='\033[0m'
 
 function color_echo {
-    echo -e "${1}${2}${NC}"
+    echo -e "${1}${2}${_DF_NC}"
 }
 
 #### Docker utilities ####
@@ -33,15 +31,15 @@ function drunning {
 }
 
 function dls {
-    color_echo "$LBLUE" "Active docker containers:"
+    color_echo "$_DF_LBLUE" "Active docker containers:"
     docker container ls
     echo ""
-    color_echo "$LYELLOW" "Stopped docker containers:"
+    color_echo "$_DF_LYELLOW" "Stopped docker containers:"
     docker ps --filter "status=exited"
 }
 
 function dils {
-    color_echo "$LGRAY" "Docker images:"
+    color_echo "$_DF_LGRAY" "Docker images:"
     docker images
 }
 
