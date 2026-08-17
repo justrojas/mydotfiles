@@ -454,9 +454,6 @@ switch to next activity=
 switch to previous activity=
 toggle do not disturb=
 
-[spotify_like.desktop][Global Shortcuts]
-_launch=Meta+]
-
 [systemsettings.desktop][Global Shortcuts]
 _launch=Tools
 kcm-kscreen=
