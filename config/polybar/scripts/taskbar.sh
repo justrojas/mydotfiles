@@ -37,28 +37,11 @@ current=$(wmctrl -d | awk '/\*/ {print $1; exit}')
 active_raw=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk '{print $NF}')
 active=$(printf '0x%08x' "$active_raw" 2>/dev/null || echo "")
 
-# Map WM_CLASS to a Nerd Font glyph. Plasma uses real app icons; polybar can
-# only render glyphs from its configured fonts, so this is the closest we get.
-icon_for() {
-    case "${1,,}" in
-        *firefox*)                echo "" ;;
-        *chrome*|*chromium*)      echo "" ;;
-        *kitty*|*konsole*|*term*) echo "" ;;
-        *code*|*vscodium*)        echo "" ;;
-        *dolphin*|*nautilus*|*thunar*) echo "" ;;
-        *spotify*)                echo "" ;;
-        *slack*)                  echo "" ;;
-        *discord*)                echo "" ;;
-        *thunderbird*|*mail*)     echo "" ;;
-        *libreoffice*|*writer*)   echo "" ;;
-        *gimp*|*inkscape*)        echo "" ;;
-        *vlc*|*mpv*)              echo "" ;;
-        *steam*)                  echo "" ;;
-        *settings*|*systemsettings*) echo "" ;;
-        *nvim*|*vim*)             echo "" ;;
-        *)                        echo "" ;;
-    esac
-}
+# Icon table and the ignore-list are shared with workspaces.sh so the two can
+# never disagree about which glyph an application gets.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./icons.sh
+source "$SCRIPT_DIR/icons.sh"
 
 # `wmctrl -lx` columns are: WID DESKTOP WM_CLASS HOSTNAME TITLE, separated by
 # VARIABLE whitespace (the class column is padded). Splitting on a fixed column
@@ -71,10 +54,8 @@ while IFS=$'\t' read -r win_id win_desk win_class title; do
     # Only windows on the current desktop. -1 means "sticky / all desktops".
     [ "$win_desk" != "$current" ] && [ "$win_desk" != "-1" ] && continue
 
-    # wmctrl -l lists the desktop/panel pseudo-window; skip it.
-    case "${win_class,,}" in
-        *plasmashell*|*polybar*|*desktop*) continue ;;
-    esac
+    # wmctrl lists the desktop shell and our own bar; skip those.
+    is_ignorable_class "$win_class" && continue
 
     icon=$(icon_for "$win_class")
 
