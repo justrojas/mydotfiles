@@ -255,11 +255,17 @@ setup_kvantum_config() {
         return
     fi
 
-    if ! command -v kvantummanager >/dev/null 2>&1 \
-       && [[ ! -d /usr/share/Kvantum ]]; then
-        log_warning "Kvantum engine not installed — skipping theme config"
-        log_info "It comes from qt5-style-kvantum, installed by install_packages()"
-        return
+    # Install the config even when the engine is absent, and warn instead of
+    # skipping.
+    #
+    # The theme files are inert without qt5-style-kvantum, so copying them
+    # early costs nothing — and if the engine is installed later the theme is
+    # already in place rather than silently missing. Skipping outright also
+    # made this step untestable under --config-only, which deliberately does
+    # not apt-install anything.
+    if ! command -v kvantummanager >/dev/null 2>&1 && [[ ! -d /usr/share/Kvantum ]]; then
+        log_warning "Kvantum engine not installed — theme will be inert until it is"
+        log_info "It comes from qt5-style-kvantum (installed by install_packages)"
     fi
 
     ensure_dir "$target_dir"
