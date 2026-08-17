@@ -5,61 +5,76 @@
 # then symlinks configs. Installs: oh-my-zsh, zsh plugins, oh-my-posh, NvChad.
 # Symlinks: zshrc, kitty config, tmux config. Initialises tmux submodules.
 #
-# Usage: bash terminal-setup.sh [--non-interactive] [--dry-run]
+# Usage: bash terminal-setup.sh [--non-interactive] [--dry-run] [--update] [--minimal]
+#
+# --minimal  headless/VM mode: skip everything that only makes sense with a GUI
+#            (kitty + its config, Nerd fonts, herdr, oh-my-posh kitty theme
+#            mapping, imagemagick, wl-clipboard). Shell + nvim + tmux + the CLI
+#            tools the shared aliases depend on are still installed.
 
 set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
+# Pinned tool installers, shared with profiles/install-packages.sh.
+# MUST come after common.sh — it depends on log_*, run_or_dry, ensure_dir.
+# shellcheck source=../lib/installers.sh
+source "$DOTFILES_DIR/lib/installers.sh"
 
 # ============================================================================
 # Pinned versions (matching author's current setup)
 # ============================================================================
-readonly PINNED_TMUX_VERSION="3.4"
-readonly PINNED_NVIM_VERSION="v0.11.6"
-readonly PINNED_KITTY_VERSION="0.47.4"
-readonly PINNED_ZSH_VERSION="5.8.1"
-readonly PINNED_OMP_VERSION="29.9.2"
-readonly PINNED_HERDR_VERSION="latest"
+# NOTE: oh-my-posh is intentionally NOT pinned — its installer always fetches
+# the current release. There was a PINNED_OMP_VERSION constant here that was
+# never referenced by anything, which made the pin look real.
 
 # ============================================================================
 # Argument parsing
 # ============================================================================
 NONINTERACTIVE=0
 UPDATE_MODE=0
+MINIMAL=0
 for arg in "$@"; do
     [[ "$arg" == "--non-interactive" ]] && NONINTERACTIVE=1
     [[ "$arg" == "--update" ]]          && UPDATE_MODE=1
+    [[ "$arg" == "--minimal" ]]         && MINIMAL=1
 done
 
 init_common "$@"
 
-# Total number of log_step calls in this script — drives the X/N counter
-STEP_TOTAL=11
+# Total number of log_step calls in this script — drives the X/N counter.
+# --minimal skips 3 of them (Nerd fonts, kitty config, herdr).
+if [[ $MINIMAL -eq 1 ]]; then
+    STEP_TOTAL=8
+else
+    STEP_TOTAL=11
+fi
+
+# ============================================================================
+# PATH — adopt the same PATH an interactive shell will have
+# ============================================================================
+# Most tools here install into ~/.local/bin (nvim, oh-my-posh, zoxide, kitty)
+# or ~/.fzf/bin. Those directories are put on PATH by the shell rc files via
+# config/shell/env.sh, which this process never inherited. Without sourcing it,
+# every `command -v <tool>` check below is answered against the wrong PATH:
+# already-installed tools look missing and get needlessly reinstalled.
+#
+# ORDER MATTERS: env.sh's _prepend_path only adds a directory that already
+# EXISTS. On a fresh machine ~/.local/bin does not exist until the first
+# installer creates it, so sourcing env.sh first would be a no-op for the one
+# directory that matters most. Create it up front.
+ensure_dir "$HOME/.local/bin"
+
+if [[ -f "$DOTFILES_DIR/config/shell/env.sh" ]]; then
+    # shellcheck source=../config/shell/env.sh
+    source "$DOTFILES_DIR/config/shell/env.sh"
+fi
+
 
 # ============================================================================
 # apt-get update deduplication — run at most once per invocation
 # ============================================================================
-_APT_UPDATED=0
-apt_update_once() {
-    if [[ $_APT_UPDATED -eq 0 && $DRY_RUN -eq 0 ]]; then
-        sudo apt-get update -qq
-        _APT_UPDATED=1
-    fi
-}
-
-# Prompt helper: non-interactive mode returns the default answer
-prompt_yn() {
-    local question="$1" default="${2:-n}"
-    if [[ $NONINTERACTIVE -eq 1 ]]; then
-        echo "$default"
-        return
-    fi
-    read -rp "$question" -n 1 </dev/tty
-    echo >&2
-    echo "${REPLY:-$default}"
-}
 
 # ============================================================================
 # Banner
@@ -76,273 +91,18 @@ log_info "Dotfiles: $DOTFILES_DIR"
 [[ $DRY_RUN -eq 1 ]]        && log_warning "Dry-run mode — no changes will be made"
 echo ""
 
-# ============================================================================
-# Install helpers (pinned versions)
-# ============================================================================
 
-# Install zsh via apt (pinned version is in Ubuntu 22.04+ repos)
-install_zsh() {
-    log_info "Installing zsh ${PINNED_ZSH_VERSION} via apt..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        sudo apt-get install -y zsh
-    else
-        log_info "[DRY RUN] Would run: sudo apt-get install -y zsh"
-    fi
-    log_success "zsh installed"
-}
 
-# Install kitty from the official release tarball into ~/.local/kitty.app.
-#
-# NOTE: apt on Ubuntu 22.04 only ships kitty 0.21.2, which has a Kitty
-# keyboard-protocol bug that makes Enter/Tab/Backspace fire twice inside
-# apps like herdr (fixed upstream in 0.33.0). We therefore pin a modern
-# version from GitHub releases instead of using apt, AND purge the apt
-# package at the end of this function so the buggy binary can never win.
-install_kitty() {
-    log_info "Installing kitty ${PINNED_KITTY_VERSION} from official release tarball..."
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would install kitty ${PINNED_KITTY_VERSION} to ~/.local/kitty.app"
-        return 0
-    fi
 
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    trap "rm -rf $tmpdir" RETURN
 
-    local arch tarch
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64)  tarch="x86_64" ;;
-        aarch64|arm64) tarch="arm64" ;;
-        *) log_error "Unsupported architecture '$arch' for kitty tarball"; return 1 ;;
-    esac
 
-    local tarball="kitty-${PINNED_KITTY_VERSION}-${tarch}.txz"
-    local url="https://github.com/kovidgoyal/kitty/releases/download/v${PINNED_KITTY_VERSION}/${tarball}"
 
-    log_info "Downloading kitty ${PINNED_KITTY_VERSION} (${tarch})..."
-    curl -fsSL "$url" -o "$tmpdir/$tarball"
 
-    ensure_dir "$HOME/.local/bin"
-    rm -rf "$HOME/.local/kitty.app"
-    mkdir -p "$HOME/.local/kitty.app"
-    tar -xJf "$tmpdir/$tarball" -C "$HOME/.local/kitty.app"
 
-    # Symlink onto PATH (~/.local/bin sits ahead of /usr/bin, so this wins
-    # over any stale apt-installed kitty).
-    ln -sf "$HOME/.local/kitty.app/bin/kitty"  "$HOME/.local/bin/kitty"
-    ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
 
-    # Desktop integration: install launcher entries pointing at the new binary
-    # into the user applications dir (overrides any system /usr/share entry).
-    # Without this, the app-menu/panel launcher keeps opening an old apt kitty,
-    # which reintroduces the herdr double-keypress bug.
-    local app_dst="$HOME/.local/share/applications"
-    ensure_dir "$app_dst"
-    local desk
-    for desk in kitty.desktop kitty-open.desktop; do
-        [[ -f "$HOME/.local/kitty.app/share/applications/$desk" ]] || continue
-        cp "$HOME/.local/kitty.app/share/applications/$desk" "$app_dst/$desk"
-        sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$app_dst/$desk"
-        sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$app_dst/$desk"
-    done
-    update-desktop-database "$app_dst" 2>/dev/null || true
 
-    # Purge the apt-provided kitty (0.21.2 on Ubuntu 22.04). Its Kitty
-    # keyboard-protocol bug double-fires Backspace/Enter/Tab inside herdr, and it
-    # keeps reappearing on fresh workstations because the panel/app-menu (or a
-    # login shell whose PATH lacks ~/.local/bin) can still launch /usr/bin/kitty
-    # before the ~/.local override wins. Removing the package is the only way to
-    # guarantee the buggy binary can never be launched. We keep kitty-terminfo so
-    # the xterm-kitty terminfo entry stays available system-wide.
-    if [[ $DRY_RUN -eq 0 ]]; then
-        if dpkg -l kitty 2>/dev/null | grep -q '^ii'; then
-            log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
-            sudo apt-get purge -y kitty 2>/dev/null \
-                || log_warning "Could not purge apt kitty — remove /usr/bin/kitty manually"
-        fi
-    else
-        log_info "[DRY RUN] Would purge apt-provided kitty if installed"
-    fi
 
-    log_success "kitty ${PINNED_KITTY_VERSION} installed to ~/.local/kitty.app"
-}
 
-# Install a package via apt — returns 1 (non-fatal) if the package is not found
-install_apt_package() {
-    local pkg="$1"
-    log_info "Installing $pkg via apt..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        if ! sudo apt-get install -y "$pkg" 2>&1; then
-            log_error "apt could not install '$pkg' — package may not be in the default repos"
-            return 1
-        fi
-    else
-        log_info "[DRY RUN] Would run: sudo apt-get install -y $pkg"
-    fi
-    log_success "$pkg installed"
-}
-
-# Install nodejs + npm via apt (needed by nvim Mason LSPs)
-install_nodejs() {
-    log_info "Installing nodejs and npm via apt..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        if ! sudo apt-get install -y nodejs npm 2>&1; then
-            log_error "apt could not install nodejs/npm"
-            return 1
-        fi
-    else
-        log_info "[DRY RUN] Would run: sudo apt-get install -y nodejs npm"
-    fi
-    log_success "nodejs and npm installed"
-}
-
-# Install eza via the official gierens apt repo (not in default Ubuntu 22.04 repos)
-install_eza() {
-    log_info "Installing eza via gierens apt repo..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        sudo apt-get install -y gpg
-        sudo mkdir -p /etc/apt/keyrings
-        curl -fsSL https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-            | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-            | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
-        sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-        sudo apt-get update -qq   # must re-run after adding the new repo
-        sudo apt-get install -y eza
-    else
-        log_info "[DRY RUN] Would add gierens apt repo and install eza"
-    fi
-    log_success "eza installed"
-}
-
-# Install glow via the charm.sh apt repo (not in default Ubuntu 22.04 repos)
-install_glow() {
-    log_info "Installing glow via charm.sh apt repo..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        apt_update_once
-        sudo apt-get install -y gpg
-        sudo mkdir -p /etc/apt/keyrings
-        curl -fsSL https://repo.charm.sh/apt/gpg.key \
-            | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
-            | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null
-        sudo chmod 644 /etc/apt/keyrings/charm.gpg /etc/apt/sources.list.d/charm.list
-        sudo apt-get update -qq   # must re-run after adding the new repo
-        sudo apt-get install -y glow
-    else
-        log_info "[DRY RUN] Would add charm.sh apt repo and install glow"
-    fi
-    log_success "glow installed"
-}
-
-# Install zoxide via official installer (apt version 0.4.x is too old for 'zoxide init zsh --cmd cd')
-install_zoxide() {
-    log_info "Installing zoxide via official installer..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
-    else
-        log_info "[DRY RUN] Would install zoxide via official installer"
-    fi
-    log_success "zoxide installed"
-}
-
-# Install herdr — agent-aware terminal multiplexer
-install_herdr() {
-    log_info "Installing herdr via official installer..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        curl -fsSL https://herdr.dev/install.sh | sh
-    else
-        log_info "[DRY RUN] Would install herdr via https://herdr.dev/install.sh"
-    fi
-    log_success "herdr installed"
-}
-
-# Install fzf via git (required by oh-my-zsh fzf plugin — apt install alone is not enough)
-install_fzf() {
-    log_info "Installing fzf via git..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        if [[ -d "$HOME/.fzf" ]]; then
-            git -C "$HOME/.fzf" pull --quiet
-        else
-            git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
-        fi
-        "$HOME/.fzf/install" --all --no-bash --no-fish --no-update-rc 2>/dev/null
-    else
-        log_info "[DRY RUN] Would clone fzf to ~/.fzf and run install"
-    fi
-    log_success "fzf installed"
-}
-
-# Install tmux 3.4 from source (Ubuntu 22.04 apt only has 3.2a)
-install_tmux() {
-    log_info "Installing tmux ${PINNED_TMUX_VERSION} from source..."
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would build tmux ${PINNED_TMUX_VERSION} from source"
-        return 0
-    fi
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    trap "rm -rf $tmpdir" RETURN
-
-    log_info "Installing build dependencies..."
-    apt_update_once
-    sudo apt-get install -y build-essential libevent-dev libncurses-dev pkg-config bison
-
-    local tarball="tmux-${PINNED_TMUX_VERSION}.tar.gz"
-    local url="https://github.com/tmux/tmux/releases/download/${PINNED_TMUX_VERSION}/${tarball}"
-
-    log_info "Downloading tmux ${PINNED_TMUX_VERSION}..."
-    curl -fsSL "$url" -o "$tmpdir/$tarball"
-    tar -xzf "$tmpdir/$tarball" -C "$tmpdir"
-
-    log_info "Compiling tmux..."
-    (
-        builtin cd "$tmpdir/tmux-${PINNED_TMUX_VERSION}"
-        ./configure --prefix="$HOME/.local"
-        make -j"$(nproc)"
-        make install
-    )
-
-    log_success "tmux ${PINNED_TMUX_VERSION} installed to ~/.local/bin/tmux"
-    log_info "Ensure ~/.local/bin is early in PATH to use this version"
-}
-
-# Install neovim v0.11.6 from GitHub release binary
-install_nvim() {
-    log_info "Installing neovim ${PINNED_NVIM_VERSION} from GitHub release..."
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would install neovim ${PINNED_NVIM_VERSION} to ~/.local/bin/nvim"
-        return 0
-    fi
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    trap "rm -rf $tmpdir" RETURN
-
-    local url="https://github.com/neovim/neovim/releases/download/${PINNED_NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
-    log_info "Downloading neovim ${PINNED_NVIM_VERSION}..."
-    curl -fsSL "$url" -o "$tmpdir/nvim.tar.gz"
-    tar -xzf "$tmpdir/nvim.tar.gz" -C "$tmpdir"
-
-    ensure_dir "$HOME/.local/bin"
-    ensure_dir "$HOME/.local/lib"
-
-    # Copy binary and runtime
-    cp "$tmpdir/nvim-linux-x86_64/bin/nvim" "$HOME/.local/bin/nvim"
-    chmod +x "$HOME/.local/bin/nvim"
-    rsync -a "$tmpdir/nvim-linux-x86_64/lib/nvim" "$HOME/.local/lib/" 2>/dev/null || \
-        cp -r "$tmpdir/nvim-linux-x86_64/lib/nvim" "$HOME/.local/lib/"
-    rsync -a "$tmpdir/nvim-linux-x86_64/share/" "$HOME/.local/share/" 2>/dev/null || \
-        cp -r "$tmpdir/nvim-linux-x86_64/share/." "$HOME/.local/share/"
-
-    log_success "neovim ${PINNED_NVIM_VERSION} installed to ~/.local/bin/nvim"
-}
 
 # Prompt the user whether to install a missing tool, then call the installer
 handle_missing_tool() {
@@ -389,35 +149,50 @@ get_installed_version() {
     esac
 }
 
-# Returns 0 (up-to-date / no check needed) or 1 (stale / needs upgrade).
+# Is the installed tool older than the pinned version?
+#
+# CONVENTION: returns 0 (true) when the tool IS outdated, 1 (false) otherwise —
+# matching the function name and the `if is_tool_outdated ...; then upgrade`
+# call site.
+#
+# This was previously inverted (0 meant "up to date"), which made every check
+# backwards: current tools were reported stale, genuinely stale ones were
+# reported fine, and every "system" tool printed the nonsense
+# "is outdated (installed: ?, pinned: system)".
 is_tool_outdated() {
     local tool="$1"
+
+    # older_than <have> <want> → true when have < want
+    _older_than() {
+        [[ "$(printf '%s\n' "$1" "$2" | sort -V | head -1)" == "$1" && "$1" != "$2" ]]
+    }
+
     case "$tool" in
         nvim)
-            local actual pinned
+            local actual a_minor p_minor
             actual=$(get_installed_version nvim)
-            pinned="$PINNED_NVIM_VERSION"
+            # Unknown version — can't prove it's stale, so don't nag.
             [[ -z "$actual" ]] && return 1
-            local a_minor p_minor
-            a_minor=$(echo "$actual" | grep -oP '\d+\.\d+' | head -1)
-            p_minor=$(echo "$pinned"  | grep -oP '\d+\.\d+' | head -1)
-            [[ "$(printf '%s\n' "$a_minor" "$p_minor" | sort -V | head -1)" != "$p_minor" ]] && return 1
-            return 0
+            a_minor=$(echo "$actual"              | grep -oP '\d+\.\d+' | head -1)
+            p_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
+            _older_than "$a_minor" "$p_minor"
             ;;
         tmux)
-            local actual="$( get_installed_version tmux )"
+            local actual
+            actual="$(get_installed_version tmux)"
             [[ -z "$actual" ]] && return 1
-            [[ "$(printf '%s\n' "$actual" "$PINNED_TMUX_VERSION" | sort -V | head -1)" != "$PINNED_TMUX_VERSION" ]] && return 1
-            return 0
+            _older_than "$actual" "$PINNED_TMUX_VERSION"
             ;;
         kitty)
-            local actual="$( get_installed_version kitty )"
+            local actual
+            actual="$(get_installed_version kitty)"
             [[ -z "$actual" ]] && return 1
-            # Minimum acceptable kitty: 0.33.0 (keyboard-protocol fix)
-            [[ "$(printf '%s\n' "$actual" "0.33.0" | sort -V | head -1)" != "0.33.0" ]] && return 1
-            return 0
+            # Minimum acceptable kitty is 0.33.0 — the release that fixed the
+            # keyboard-protocol bug behind the herdr double-keypress issue.
+            # We pin higher, but anything >= 0.33.0 is functionally correct.
+            _older_than "$actual" "$MIN_KITTY_VERSION"
             ;;
-        *)  return 0 ;;  # system tools — no pinned version to enforce
+        *)  return 1 ;;  # system tools — no pinned version to enforce
     esac
 }
 
@@ -454,21 +229,47 @@ declare -A TOOL_INSTALLERS=(
     [npm]="install_nodejs"
     [fzf]="install_fzf"
     [eza]="install_eza"
-    [batcat]="install_apt_package bat"
+    [batcat]="install_apt_package bat batcat"
     [zoxide]="install_zoxide"
     [tree]="install_apt_package tree"
     [glow]="install_glow"
     [rsync]="install_apt_package rsync"
-    [rg]="install_apt_package ripgrep"
-    [fdfind]="install_apt_package fd-find"
-    [magick]="install_apt_package imagemagick"
-    [pip3]="install_apt_package python3-pip"
-    [wl-copy]="install_apt_package wl-clipboard"
+    [rg]="install_apt_package ripgrep rg"
+    [fdfind]="install_apt_package fd-find fdfind"
+    [magick]="install_apt_package imagemagick magick convert"
+    [pip3]="install_apt_package python3-pip pip3"
+    [wl-copy]="install_apt_package wl-clipboard wl-copy"
     [herdr]="install_herdr"
 )
 
-for tool in tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr; do
-    if command -v "$tool" >/dev/null 2>&1; then
+# Tools to check/install. --minimal drops the GUI-only ones: kitty (terminal
+# emulator), imagemagick (used for image previews in kitty), wl-clipboard
+# (Wayland-only) and herdr (a graphical-terminal multiplexer). tmux covers
+# multiplexing on a headless box.
+if [[ $MINIMAL -eq 1 ]]; then
+    TOOL_LIST=(tmux nvim zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind pip3)
+else
+    TOOL_LIST=(tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr)
+fi
+
+# Some tools are reachable under more than one binary name depending on the
+# distro release. Keyed by TOOL_LIST entry; value is the set of acceptable
+# binaries. Without this, a present-but-differently-named tool is treated as
+# missing and reinstalled on every single run.
+declare -A TOOL_ALIASES=(
+    [magick]="magick convert"   # ImageMagick 7 vs 6
+)
+
+_tool_present() {
+    local candidate
+    for candidate in ${TOOL_ALIASES[$1]:-$1}; do
+        command -v "$candidate" >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
+for tool in "${TOOL_LIST[@]}"; do
+    if _tool_present "$tool"; then
         if is_tool_outdated "$tool"; then
             actual=$(get_installed_version "$tool")
             pinned="${TOOL_VERSIONS[$tool]}"
@@ -526,8 +327,11 @@ else
 fi
 
 # ============================================================================
-# FONTS
+# FONTS  (GUI only — a headless VM has no font renderer)
 # ============================================================================
+if [[ $MINIMAL -eq 1 ]]; then
+    log_info "Skipping Nerd fonts (--minimal)"
+else
 log_step "Nerd fonts"
 
 fonts_src="$DOTFILES_DIR/assets/fonts"
@@ -545,8 +349,15 @@ if [[ -d "$fonts_src" ]]; then
         fi
     done
     if [[ $new_fonts -gt 0 ]]; then
-        log_info "Rebuilding font cache..."
-        run_or_dry fc-cache -f "$fonts_dst"
+        # Best-effort: the fonts are already on disk, fc-cache only refreshes
+        # fontconfig's index. Not worth aborting the whole profile over, and on
+        # a minimal image fontconfig may not be installed at all.
+        if command -v fc-cache >/dev/null 2>&1; then
+            log_info "Rebuilding font cache..."
+            run_or_dry fc-cache -f "$fonts_dst" || log_warning "fc-cache failed — fonts installed anyway"
+        else
+            log_warning "fc-cache not found — fonts installed, cache not refreshed"
+        fi
         log_success "Installed $new_fonts nerd font(s)"
     else
         log_success "Nerd fonts already installed"
@@ -554,10 +365,14 @@ if [[ -d "$fonts_src" ]]; then
 else
     log_warning "assets/fonts not found — skipping font install"
 fi
+fi  # end --minimal font guard
 
 # ============================================================================
-# KITTY
+# KITTY  (GUI only)
 # ============================================================================
+if [[ $MINIMAL -eq 1 ]]; then
+    log_info "Skipping kitty configuration (--minimal)"
+else
 log_step "kitty configuration"
 
 if [[ -d "$DOTFILES_DIR/config/kitty" ]]; then
@@ -566,6 +381,7 @@ if [[ -d "$DOTFILES_DIR/config/kitty" ]]; then
 else
     log_error "Kitty config not found at $DOTFILES_DIR/config/kitty"
 fi
+fi  # end --minimal kitty guard
 
 # ============================================================================
 # NEOVIM (NvChad)
@@ -630,14 +446,24 @@ if $setup_zsh; then
             if [[ $DRY_RUN -eq 0 ]]; then
                 # RUNZSH=no  — don't exec zsh at the end (would kill this script)
                 # KEEP_ZSHRC=yes — don't overwrite .zshrc (we symlink ours after)
-                # </dev/tty  — prevent installer from hanging on piped stdin
+                # stdin — the installer hangs on piped stdin, so give it a real
+                # tty when one exists. In a container/CI there is no /dev/tty and
+                # redirecting from it fails outright, so fall back to /dev/null.
                 RUNZSH=no KEEP_ZSHRC=yes \
                     sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
-                    "" --unattended </dev/tty || true
+                    "" --unattended <"$OMZ_STDIN" || true
+
+                # Verify rather than assume. The old code unconditionally logged
+                # success even when the installer had failed, which made a broken
+                # install look clean until something downstream tripped over it.
+                if [[ -d "$HOME/.oh-my-zsh" ]]; then
+                    log_success "Oh My Zsh installed"
+                else
+                    log_error "Oh My Zsh install failed — zsh plugins will be skipped"
+                fi
             else
                 log_info "[DRY RUN] Would install Oh My Zsh"
             fi
-            log_success "Oh My Zsh installed"
         else
             log_success "Oh My Zsh already installed"
         fi
@@ -650,39 +476,29 @@ if $setup_zsh; then
             log_error "No .zshrc found at $DOTFILES_DIR/config/zsh/.zshrc"
         fi
 
-        # Set zsh as the login shell if not already set
-        zsh_path="$(command -v zsh)"
-        if [[ "$SHELL" != "$zsh_path" ]]; then
-            log_info "Setting login shell to zsh ($zsh_path)..."
-            # Ensure zsh is in /etc/shells (needed for chsh)
-            if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
-                log_info "Adding $zsh_path to /etc/shells..."
-                run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells" </dev/tty
-            fi
-            if [[ $DRY_RUN -eq 0 ]]; then
-                # Prefer usermod (no interactive password prompt); fall back to chsh
-                if sudo usermod -s "$zsh_path" "$USER" 2>/dev/null; then
-                    log_success "Login shell set to zsh via usermod — open a new terminal to apply"
-                elif chsh -s "$zsh_path" </dev/tty 2>/dev/null; then
-                    log_success "Login shell set to zsh — open a new terminal to apply"
-                else
-                    log_warning "Could not change login shell automatically (non-local user?)"
-                    # Fallback: add exec zsh to ~/.bashrc so bash immediately hands off to zsh
-                    if ! grep -qF "exec zsh" "$HOME/.bashrc" 2>/dev/null; then
-                        log_info "Adding 'exec zsh' fallback to ~/.bashrc..."
-                        printf '\n# Switch to zsh (login shell could not be changed)\n[ -x "%s" ] && exec "%s" -l\n' \
-                            "$zsh_path" "$zsh_path" >> "$HOME/.bashrc"
-                        log_success "~/.bashrc will launch zsh automatically"
-                    else
-                        log_success "~/.bashrc already has exec zsh fallback"
-                    fi
-                fi
-            else
-                log_info "[DRY RUN] Would run: chsh -s $zsh_path"
-            fi
-        else
-            log_success "Login shell is already zsh"
+        # NOTE: we deliberately do NOT chsh to zsh any more.
+        #
+        # bash is the primary interactive shell, and it is already the login
+        # shell on every distro we target — so the correct login shell needs no
+        # change. Which shell you actually land in is decided by
+        # ~/.config/shell/preferred (see config/shell/switch.sh), which the bash
+        # step below seeds to "bash". `shell-toggle` flips it, `tozsh` is a
+        # one-off.
+        #
+        # The old code path also appended an `exec zsh` fallback to ~/.bashrc.
+        # That is now actively harmful: ~/.bashrc is a symlink into this repo,
+        # so the append would have written into a tracked file and dirtied the
+        # working tree on every install.
+        #
+        # Make sure zsh is still a valid login shell so `shell-toggle` and
+        # `chsh` work if you decide to flip back manually.
+        zsh_path="$(command -v zsh || true)"
+        if [[ -n "$zsh_path" ]] && ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
+            log_info "Registering $zsh_path in /etc/shells (for manual chsh)..."
+            run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells" <"$TTY_STDIN" \
+                || log_warning "Could not update /etc/shells (non-fatal)"
         fi
+        log_success "zsh configured (bash remains the default — use 'shell-toggle' to switch)"
 
         # zsh plugins
         ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
@@ -714,11 +530,15 @@ if $setup_zsh; then
                 if ! command -v unzip >/dev/null 2>&1; then
                     sudo apt-get install -y unzip >/dev/null 2>&1 || true
                 fi
+                # `|| true` keeps a transient network failure from aborting the
+                # whole run, but the result MUST then be verified — otherwise a
+                # failed download is reported as a successful install.
                 curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin" || true
             else
                 log_info "[DRY RUN] Would install oh-my-posh to ~/.local/bin"
             fi
-            log_success "oh-my-posh installed"
+            _confirm_install oh-my-posh "oh-my-posh" \
+                || log_warning "oh-my-posh missing — prompt will fall back to plain PS1"
         fi
     fi
 fi
@@ -733,16 +553,25 @@ if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
     safe_symlink "$DOTFILES_DIR/config/bash/.bash_profile" "$HOME/.bash_profile"
     log_success "bash config linked (.bashrc, .bash_profile)"
 
-    # Seed the shell preference (defaults to zsh — the author's preference).
-    # Interactive shells auto-switch toward this; `shell-toggle` flips it.
+    # Seed the shell preference. bash is the primary interactive shell; zsh
+    # stays fully configured and is one `shell-toggle` (or `tozsh`) away.
     ensure_dir "$HOME/.config/shell"
     if [[ ! -f "$HOME/.config/shell/preferred" ]]; then
         if [[ $DRY_RUN -eq 0 ]]; then
-            echo "zsh" > "$HOME/.config/shell/preferred"
+            echo "bash" > "$HOME/.config/shell/preferred"
         fi
-        log_info "Set default shell preference: zsh (run 'shell-toggle' to switch to bash)"
+        log_info "Set default shell preference: bash (run 'shell-toggle' to switch to zsh)"
     else
         log_success "shell preference already set: $(cat "$HOME/.config/shell/preferred" 2>/dev/null)"
+    fi
+
+    # ble.sh — bash's answer to zsh-autosuggestions + zsh-syntax-highlighting.
+    # Not in the TOOL_LIST loop above because it is not a binary on PATH; it is
+    # a library sourced by .bashrc from ~/.local/share/blesh.
+    if [[ -f "$HOME/.local/share/blesh/ble.sh" ]]; then
+        log_success "ble.sh already installed"
+    else
+        install_blesh
     fi
 else
     log_error "bash config not found at $DOTFILES_DIR/config/bash"
@@ -775,14 +604,18 @@ else
     log_warning "scripts/utilities not found — skipping utility scripts"
 fi
 
+# ~/.local/bin is created and put on PATH at the top of this script, so this
+# should never fire. If it does, something unset PATH mid-run.
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    log_warning "~/.local/bin is not in PATH"
-    log_info "Add to your shell config:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    log_warning "~/.local/bin unexpectedly missing from PATH — tool checks may misreport"
 fi
 
 # ============================================================================
-# HERDR
+# HERDR  (GUI terminal multiplexer — tmux covers this on a headless box)
 # ============================================================================
+if [[ $MINIMAL -eq 1 ]]; then
+    log_info "Skipping herdr configuration (--minimal; use tmux instead)"
+else
 log_step "herdr configuration"
 
 if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
@@ -792,6 +625,7 @@ if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
 else
     log_warning "config/herdr not found — skipping"
 fi
+fi  # end --minimal herdr guard
 
 # ============================================================================
 # OH-MY-POSH THEMES
@@ -823,11 +657,14 @@ if [[ -d "$DOTFILES_DIR/config/oh-my-posh" ]]; then
         log_success "omp current theme already set: $(basename "$(readlink "$omp_current")" .omp.json)"
     fi
 
-    # Create kt↔omp mapping symlinks from theme-mappings.conf
+    # Create kt↔omp mapping symlinks from theme-mappings.conf.
+    # Pointless without kitty, so skip it in --minimal.
     mappings_file="$DOTFILES_DIR/config/oh-my-posh/theme-mappings.conf"
     omp_cache_dir="$HOME/.cache/oh-my-posh/themes"
     omp_gh_base="https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes"
-    if [[ -f "$mappings_file" ]]; then
+    if [[ $MINIMAL -eq 1 ]]; then
+        log_info "Skipping kitty↔omp theme mappings (--minimal)"
+    elif [[ -f "$mappings_file" ]]; then
         log_info "Creating kitty↔omp theme mappings..."
         mapped=0
         while IFS='=' read -r kitty_theme omp_theme; do
@@ -862,6 +699,18 @@ fi
 # ============================================================================
 log_step "Verifying installation"
 
+# Verify against the PATH an INTERACTIVE shell will actually have, not the one
+# this script inherited. Tools land in ~/.local/bin (nvim, oh-my-posh, zoxide)
+# and ~/.fzf/bin (fzf); those directories are put on PATH by the shell rc files
+# via config/shell/env.sh, which this process never sourced.
+#
+# Without this the verifier reported nvim/oh-my-posh/fzf/zoxide as MISSING
+# immediately after installing them successfully — alarming, and wrong.
+if [[ -f "$DOTFILES_DIR/config/shell/env.sh" ]]; then
+    # shellcheck source=../config/shell/env.sh
+    source "$DOTFILES_DIR/config/shell/env.sh"
+fi
+
 VERIFY_PASS=0
 VERIFY_FAIL=0
 
@@ -885,20 +734,24 @@ verify_cmd() {
 
 echo ""
 echo "  Symlinks"
+verify_symlink ".bashrc"                   "$HOME/.bashrc"
 verify_symlink ".zshrc"                    "$HOME/.zshrc"
 verify_symlink ".tmux.conf"                "$HOME/.tmux.conf"
-verify_symlink ".config/kitty"             "$HOME/.config/kitty"
-verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
-verify_symlink ".local/bin/kt"             "$HOME/.local/bin/kt"
+if [[ $MINIMAL -eq 0 ]]; then
+    verify_symlink ".config/kitty"             "$HOME/.config/kitty"
+    verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+    verify_symlink ".local/bin/kt"             "$HOME/.local/bin/kt"
+fi
 
 echo ""
 echo "  Tools in PATH"
+verify_cmd "bash"         bash
 verify_cmd "zsh"          zsh
 verify_cmd "tmux"         tmux
-verify_cmd "kitty"        kitty
+[[ $MINIMAL -eq 0 ]] && verify_cmd "kitty" kitty || true
 verify_cmd "nvim"         nvim
 verify_cmd "oh-my-posh"   oh-my-posh
-verify_cmd "herdr"        herdr
+[[ $MINIMAL -eq 0 ]] && verify_cmd "herdr" herdr || true
 verify_cmd "fzf"          fzf
 verify_cmd "eza"          eza
 verify_cmd "zoxide"       zoxide
@@ -912,10 +765,18 @@ if [[ -d "$HOME/.oh-my-zsh" ]]; then _vok  "Oh My Zsh installed"
 else                                  _vfail "Oh My Zsh installed"
 fi
 
-# Login shell
-login_shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7 || echo "")
-if [[ "$login_shell" == "$(command -v zsh)" ]]; then _vok "Login shell is zsh"
-else _vfail "Login shell is zsh" "current: ${login_shell:-unknown}"; fi
+# Preferred shell (this, not the login shell, decides where you land —
+# see config/shell/switch.sh).
+pref_file="$HOME/.config/shell/preferred"
+if [[ -r "$pref_file" ]]; then _vok "Shell preference" "$(cat "$pref_file")"
+else _vfail "Shell preference" "unset (will use login shell)"; fi
+
+# terminfo: the entry kitty advertises must actually resolve, or full-screen
+# TUIs (herdr especially) mis-parse key sequences and double up keystrokes.
+if [[ $MINIMAL -eq 0 ]]; then
+    if infocmp xterm-kitty >/dev/null 2>&1; then _vok "xterm-kitty terminfo"
+    else _vfail "xterm-kitty terminfo" "missing — herdr may double keypresses"; fi
+fi
 
 # omp theme
 omp_current="$HOME/.config/oh-my-posh/current.omp.json"
@@ -951,7 +812,7 @@ log_info "Next steps:"
 [[ -L "$HOME/.tmux.conf" ]] && echo "  • Start tmux and press Ctrl+Space + I to install plugins"
 [[ -L "$HOME/.config/herdr/config.toml" ]] && echo "  • Launch herdr with 'herdr' — prefix is Ctrl+Space (mirrors tmux bindings)"
 [[ -d "$HOME/.config/nvim" ]] && echo "  • Open a NEW terminal, then run 'nvim' to bootstrap plugins"
-[[ -L "$HOME/.zshrc" ]] && echo "  • Open a new terminal (or run 'exec zsh') to activate zsh + oh-my-posh"
+[[ -L "$HOME/.bashrc" ]] && echo "  • Open a new terminal to activate bash + oh-my-posh ('shell-toggle' for zsh)"
 echo ""
 log_warning "IMPORTANT: Open a new terminal before running nvim — the correct nvim from ~/.local/bin must be in PATH"
 echo ""

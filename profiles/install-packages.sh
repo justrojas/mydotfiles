@@ -10,8 +10,26 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
+# Pinned tool installers, shared with profiles/terminal-setup.sh — single source
+# of truth for kitty/nvim/eza/glow/zoxide and their version pins.
+# shellcheck source=../lib/installers.sh
+source "$DOTFILES_DIR/lib/installers.sh"
 
 init_common "$@"
+
+STEP_TOTAL=5
+
+# Tools installed by lib/installers.sh land in ~/.local/bin. Create it and adopt
+# the shell's canonical PATH BEFORE any install runs, otherwise _confirm_install
+# checks against a PATH that lacks the very directory the installers write to,
+# and reports successful installs as failures.
+# (env.sh's _prepend_path only adds directories that already exist — hence the
+# ensure_dir first.)
+ensure_dir "$HOME/.local/bin"
+if [[ -f "$DOTFILES_DIR/config/shell/env.sh" ]]; then
+    # shellcheck source=../config/shell/env.sh
+    source "$DOTFILES_DIR/config/shell/env.sh"
+fi
 
 # ============================================================================
 # OS check
@@ -47,146 +65,69 @@ apt_install \
     p7zip-full \
     autoconf automake libtool \
     build-essential libevent-dev libncurses5-dev libncursesw5-dev \
-    gpg
+    gpg \
+    gawk
 
 # ============================================================================
-# kitty (pinned modern release — NOT apt)
+# Pinned third-party tools
 # ============================================================================
-# apt on Ubuntu 22.04 only ships kitty 0.21.2, which has a Kitty
-# keyboard-protocol bug that makes Enter/Tab/Backspace fire twice inside
-# apps like herdr (fixed upstream in 0.33.0). Install a modern release from
-# GitHub into ~/.local/kitty.app instead.
-readonly KITTY_VERSION="0.47.4"
-log_step "Installing kitty ${KITTY_VERSION}"
-kitty_actual=$(kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "0.0.0")
-if command -v kitty >/dev/null 2>&1 && \
-   [[ "$(printf '%s\n' "$kitty_actual" "0.33.0" | sort -V | head -1)" == "0.33.0" || \
-      "$kitty_actual" == "0.33.0" ]]; then
-    log_success "kitty already installed ($kitty_actual)"
-elif [[ $DRY_RUN -eq 1 ]]; then
-    log_info "[DRY RUN] Would install kitty ${KITTY_VERSION} to ~/.local/kitty.app"
-else
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64)        tarch="x86_64" ;;
-        aarch64|arm64) tarch="arm64" ;;
-        *) log_error "Unsupported architecture '$arch' for kitty tarball"; tarch="" ;;
-    esac
-    if [[ -n "$tarch" ]]; then
-        kitty_tmp=$(mktemp -d)
-        tarball="kitty-${KITTY_VERSION}-${tarch}.txz"
-        url="https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/${tarball}"
-        log_info "Downloading kitty ${KITTY_VERSION} (${tarch})..."
-        curl -fsSL "$url" -o "$kitty_tmp/$tarball"
-        ensure_dir "$HOME/.local/bin"
-        rm -rf "$HOME/.local/kitty.app"
-        mkdir -p "$HOME/.local/kitty.app"
-        tar -xJf "$kitty_tmp/$tarball" -C "$HOME/.local/kitty.app"
-        ln -sf "$HOME/.local/kitty.app/bin/kitty"  "$HOME/.local/bin/kitty"
-        ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
-        # Desktop integration so the app-menu launcher uses the new binary
-        # (otherwise a stale /usr/bin/kitty keeps opening).
-        app_dst="$HOME/.local/share/applications"
-        ensure_dir "$app_dst"
-        for desk in kitty.desktop kitty-open.desktop; do
-            [ -f "$HOME/.local/kitty.app/share/applications/$desk" ] || continue
-            cp "$HOME/.local/kitty.app/share/applications/$desk" "$app_dst/$desk"
-            sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$app_dst/$desk"
-            sed -i "s|Exec=kitty|Exec=$HOME/.local/kitty.app/bin/kitty|g" "$app_dst/$desk"
-        done
-        update-desktop-database "$app_dst" 2>/dev/null || true
-        rm -rf "$kitty_tmp"
-        log_success "kitty ${KITTY_VERSION} installed to ~/.local/kitty.app"
-    fi
-fi
+# kitty, eza, glow, zoxide and neovim all used to be installed again here, with
+# their own copy-pasted implementations. Because profiles/desktop-setup.sh runs
+# this script and then terminal-setup.sh, that meant kitty was downloaded and
+# extracted twice, and neovim was installed twice to two different paths:
+# an unpinned 'stable' AppImage into /usr/local/bin here, versus the pinned
+# tarball into ~/.local/bin there — two binaries on PATH, pin silently defeated.
+#
+# All of it now lives once in lib/installers.sh, which both profiles source.
+log_step "Installing pinned third-party tools"
 
-# ============================================================================
-# eza (modern ls replacement)
-# ============================================================================
-log_step "Installing eza"
-if command -v eza >/dev/null 2>&1; then
-    log_success "eza already installed"
-else
-    log_info "Adding eza apt repository..."
-    run_or_dry sudo mkdir -p /etc/apt/keyrings
-    if [[ $DRY_RUN -eq 0 ]]; then
-        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-            | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-            | sudo tee /etc/apt/sources.list.d/gierens.list
-        sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-    fi
-    apt_install eza
-fi
-
-# ============================================================================
-# glow (markdown renderer)
-# ============================================================================
-log_step "Installing glow"
-if command -v glow >/dev/null 2>&1; then
-    log_success "glow already installed"
-else
-    log_info "Adding Charm apt repository..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        curl -fsSL https://repo.charm.sh/apt/gpg.key \
-            | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
-            | sudo tee /etc/apt/sources.list.d/charm.list
-    fi
-    apt_install glow
-fi
-
-# ============================================================================
-# zoxide (smart cd)
-# ============================================================================
-log_step "Installing zoxide"
-if command -v zoxide >/dev/null 2>&1; then
-    log_success "zoxide already installed"
-else
-    if [[ $DRY_RUN -eq 0 ]]; then
-        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+for _tool in kitty:install_kitty \
+             eza:install_eza \
+             glow:install_glow \
+             zoxide:install_zoxide \
+             nvim:install_nvim; do
+    _cmd="${_tool%%:*}"
+    _fn="${_tool##*:}"
+    if command -v "$_cmd" >/dev/null 2>&1; then
+        log_success "$_cmd already installed"
     else
-        log_info "[DRY RUN] Would install zoxide via install script"
+        "$_fn" || log_warning "$_cmd installation failed — continuing"
     fi
-    log_success "zoxide installed"
-fi
+done
+unset _tool _cmd _fn
 
-# ============================================================================
-# neovim (latest stable AppImage)
-# ============================================================================
-log_step "Installing neovim"
-if command -v nvim >/dev/null 2>&1; then
-    log_success "neovim already installed ($(nvim --version | head -1))"
-else
-    log_info "Downloading neovim AppImage..."
-    NVIM_TMP="$HOME/Downloads/nvim.appimage"
-    ensure_dir "$HOME/Downloads"
-    if [[ $DRY_RUN -eq 0 ]]; then
-        wget -q --show-progress \
-            -O "$NVIM_TMP" \
-            https://github.com/neovim/neovim/releases/download/stable/nvim.appimage
-        chmod +x "$NVIM_TMP"
-        sudo mv "$NVIM_TMP" /usr/local/bin/nvim
-
-        if ! nvim --version >/dev/null 2>&1; then
-            log_warning "AppImage failed, falling back to apt..."
-            sudo apt-get install -y neovim
-        fi
-    else
-        log_info "[DRY RUN] Would download and install neovim AppImage"
-    fi
-    log_success "neovim installed"
-fi
 
 # ============================================================================
 # TypeScript (global npm package)
 # ============================================================================
 log_step "Installing TypeScript"
+
+# Ubuntu 22.04's `nodejs` package is v12, which is EOL and below the engine
+# floor of every current npm package. Installing latest `typescript` there
+# "succeeds" with an EBADENGINE warning and produces a `tsc` that cannot run.
+#
+# So: check the node major version and install a TypeScript that actually
+# works with it, rather than silently shipping a broken binary.
 if command -v tsc >/dev/null 2>&1; then
-    log_success "TypeScript already installed"
+    log_success "TypeScript already installed ($(tsc --version 2>/dev/null || echo 'version unknown'))"
+elif ! command -v node >/dev/null 2>&1; then
+    log_warning "node not found — skipping TypeScript"
 else
-    run_or_dry sudo npm install -g typescript
-    log_success "TypeScript installed"
+    node_major=$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)
+    if [[ -z "$node_major" ]]; then
+        log_warning "Could not determine node version — skipping TypeScript"
+    elif [[ "$node_major" -lt 14 ]]; then
+        # TypeScript 4.x is the last line supporting node 12.
+        log_warning "node v${node_major} is EOL (Ubuntu 22.04 ships v12)"
+        log_info "Installing typescript@4 — the last release compatible with node <14"
+        log_info "For a modern toolchain install node via nvm, then: npm i -g typescript"
+        run_or_dry sudo npm install -g 'typescript@4' \
+            || log_warning "TypeScript install failed — continuing"
+    else
+        run_or_dry sudo npm install -g typescript \
+            || log_warning "TypeScript install failed — continuing"
+    fi
+    _confirm_install tsc "TypeScript" || true
 fi
 
 # ============================================================================
