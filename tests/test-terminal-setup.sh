@@ -42,7 +42,15 @@ assert_executable() {
     [[ -x "$path" ]] && pass "executable: $path" || fail "not executable: $path"
 }
 
-DOTFILES="$HOME/my-dotfiles"
+DOTFILES="${DOTFILES:-$HOME/my-dotfiles}"
+
+# The environment under test is what an INTERACTIVE shell gets, not what a
+# bare `bash script.sh` inherits. config/shell/env.sh is the single definition
+# of that PATH (~/.local/bin, ~/.fzf/bin, ~/go/bin, ...), so source it before
+# asserting — otherwise every tool installed to ~/.local/bin reports MISSING
+# even though it installed perfectly.
+# shellcheck source=/dev/null
+[ -f "$DOTFILES/config/shell/env.sh" ] && . "$DOTFILES/config/shell/env.sh"
 
 echo ""
 echo "======================================"
@@ -65,12 +73,48 @@ echo "neovim:"
 assert_dir  "$HOME/.config/nvim"
 assert_file "$HOME/.config/nvim/init.lua"
 
-# ── zsh ───────────────────────────────────────────────────────────────────────
+# ── bash (primary interactive shell) ─────────────────────────────────────────
+echo "bash:"
+assert_symlink "$HOME/.bashrc"       "$DOTFILES/config/bash/.bashrc"
+assert_symlink "$HOME/.bash_profile" "$DOTFILES/config/bash/.bash_profile"
+assert_file    "$HOME/.config/shell/preferred"
+# bash must be the seeded default; a regression here silently drops you into zsh.
+if [[ "$(cat "$HOME/.config/shell/preferred" 2>/dev/null)" == "bash" ]]; then
+    pass "shell preference is bash"
+else
+    fail "shell preference is bash (got: $(cat "$HOME/.config/shell/preferred" 2>/dev/null || echo unset))"
+fi
+# The .bashrc must be syntactically valid and load without emitting errors —
+# this is what catches things like sourcing a zsh-only completion file.
+if bash -n "$HOME/.bashrc" 2>/dev/null; then
+    pass ".bashrc parses"
+else
+    fail ".bashrc parses"
+fi
+
+# ── zsh (still available via shell-toggle) ───────────────────────────────────
 echo "zsh:"
 assert_symlink "$HOME/.zshrc" "$DOTFILES/config/zsh/.zshrc"
 assert_dir     "$HOME/.oh-my-zsh"
 assert_dir     "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
 assert_dir     "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+
+# ── shared shell layer ────────────────────────────────────────────────────────
+echo "shared shell layer:"
+assert_file "$DOTFILES/config/shell/env.sh"
+assert_file "$DOTFILES/config/shell/aliases.sh"
+assert_file "$DOTFILES/config/shell/switch.sh"
+assert_file "$DOTFILES/config/shell/docker_functions.bash"
+
+# ── terminfo ──────────────────────────────────────────────────────────────────
+# A missing xterm-kitty entry is the root cause of the herdr double-keypress
+# bug, so assert it explicitly rather than discovering it by hand later.
+echo "terminfo:"
+if infocmp xterm-kitty >/dev/null 2>&1; then
+    pass "xterm-kitty terminfo resolves"
+else
+    fail "xterm-kitty terminfo resolves"
+fi
 
 # ── oh-my-posh ────────────────────────────────────────────────────────────────
 echo "oh-my-posh:"

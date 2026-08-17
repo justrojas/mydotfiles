@@ -17,6 +17,32 @@ assert_command() {
 }
 
 echo ""
+DOTFILES="${DOTFILES:-$HOME/my-dotfiles}"
+
+# The environment under test is what an INTERACTIVE shell gets, not what a bare
+# `bash script.sh` inherits. config/shell/env.sh is the single definition of
+# that PATH (~/.local/bin, ~/.fzf/bin, ...), so source it before asserting.
+#
+# Without this, every tool installed to ~/.local/bin — zoxide, nvim, kitty —
+# reports "command not found" despite having installed perfectly. Only tools
+# landing in /usr/bin (eza, glow) passed.
+# shellcheck source=/dev/null
+[ -f "$DOTFILES/config/shell/env.sh" ] && . "$DOTFILES/config/shell/env.sh"
+
+# Accept any one of several binary names — package name != binary name is the
+# norm on Debian (bat -> batcat, fd-find -> fdfind, imagemagick -> convert).
+assert_any_command() {
+    local label="$1"; shift
+    local c
+    for c in "$@"; do
+        if command -v "$c" >/dev/null 2>&1; then
+            pass "command available: $label ($(command -v "$c"))"
+            return
+        fi
+    done
+    fail "command not found: $label (tried: $*)"
+}
+
 echo "======================================"
 echo "  install-packages.sh assertions"
 echo "======================================"
@@ -30,7 +56,7 @@ assert_command wget
 assert_command zsh
 assert_command tmux
 assert_command fzf
-assert_command bat
+assert_any_command "bat" batcat bat
 assert_command btop
 assert_command vim
 assert_command python3
@@ -43,6 +69,12 @@ echo "third-party packages:"
 assert_command eza
 assert_command glow
 assert_command zoxide
+
+# ── kitty ─────────────────────────────────────────────────────────────────────
+# Installed by lib/installers.sh into ~/.local/bin; previously unasserted, so a
+# broken kitty install would have gone unnoticed by this suite.
+echo "kitty:"
+assert_command kitty
 
 # ── neovim ────────────────────────────────────────────────────────────────────
 echo "neovim:"

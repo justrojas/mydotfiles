@@ -8,7 +8,7 @@
 #   ./tests/run-docker-tests.sh [options]
 #
 # Options:
-#   -s, --suite SUITE    Run a specific test suite: terminal | packages | all (default: all)
+#   -s, --suite SUITE    Run a specific test suite: terminal | packages | vm | kde | all (default: all)
 #   -u, --ubuntu VER     Ubuntu version to test against: 2204 | 2404 | all (default: all)
 #   -k, --keep           Keep containers after tests (useful for debugging)
 #   --dry-run            Pass --dry-run to install scripts (skips actual installs)
@@ -22,7 +22,7 @@ TESTS_DIR="$DOTFILES_ROOT/tests"
 
 # ── defaults ──────────────────────────────────────────────────────────────────
 UBUNTU_VERSIONS=("2204" "2404")
-SUITES=("terminal" "packages")
+SUITES=("terminal" "packages" "vm" "kde")
 KEEP=false
 DRY_RUN_FLAG=""
 SPECIFIC_VERSION=""
@@ -44,7 +44,7 @@ cat <<EOF
 Usage: $0 [options]
 
 Options:
-  -s, --suite SUITE    Test suite to run: terminal | packages | all  (default: all)
+  -s, --suite SUITE    Test suite: terminal | packages | vm | kde | all  (default: all)
   -u, --ubuntu VER     Ubuntu version: 2204 | 2404 | all             (default: all)
   -k, --keep           Keep containers after tests for debugging
       --dry-run        Pass --dry-run to install scripts
@@ -56,6 +56,15 @@ Test suites:
 
   packages   Runs install-packages.sh then asserts all expected
              commands (git, zsh, nvim, eza, zoxide, glow, ...) exist.
+
+  vm         Runs vm-setup.sh (headless profile) then asserts the shell +
+             nvim + tmux environment is in place AND that the GUI-only
+             components (kitty, herdr, fonts) were correctly skipped.
+
+  kde        Runs kde-setup.sh --config-only and asserts the config-wiring
+             steps (touchegg, Kvantum, Firefox userChrome, global shortcuts,
+             fonts) landed. Does NOT cover the apt/PPA/theme-clone half —
+             that needs ~2GB of KDE packages. See tests/test-kde-setup.sh.
 
 Examples:
   $0                          # run all suites on all Ubuntu versions
@@ -86,6 +95,12 @@ suite_install_cmd() {
     case "$1" in
         terminal) echo "bash my-dotfiles/profiles/terminal-setup.sh --non-interactive $DRY_RUN_FLAG" ;;
         packages) echo "bash my-dotfiles/profiles/install-packages.sh $DRY_RUN_FLAG" ;;
+        vm)       echo "bash my-dotfiles/profiles/vm-setup.sh --non-interactive $DRY_RUN_FLAG" ;;
+        # The fixture must run first — it creates the Firefox profile and the
+        # sentinel shortcut that the assertions depend on. --config-only skips
+        # the apt/PPA/theme-clone steps; --import-shortcuts opts in to the
+        # shortcut merge, which is otherwise skipped when non-interactive.
+        kde)      echo "bash my-dotfiles/tests/fixtures/kde-setup-fixture.sh && bash my-dotfiles/profiles/kde-setup.sh --config-only --non-interactive --import-shortcuts $DRY_RUN_FLAG" ;;
         *) log_error "Unknown suite: $1"; exit 1 ;;
     esac
 }
@@ -95,6 +110,8 @@ suite_assert_script() {
     case "$1" in
         terminal) echo "my-dotfiles/tests/test-terminal-setup.sh" ;;
         packages) echo "my-dotfiles/tests/test-install-packages.sh" ;;
+        vm)       echo "my-dotfiles/tests/test-vm-setup.sh" ;;
+        kde)      echo "my-dotfiles/tests/test-kde-setup.sh" ;;
         *) log_error "Unknown suite: $1"; exit 1 ;;
     esac
 }
