@@ -25,10 +25,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/icons.sh"
 
 # --- Palette (must match config.ini) ----------------------------------------
-FG_ACTIVE="#1b1e2b"   # text on the highlighted pill
-BG_ACTIVE="#7aa2f7"   # highlight
-FG_OCCUPIED="#c0caf5"
-FG_EMPTY="#3f4451"
+# The active desktop is marked with a thin underline and a brighter foreground,
+# NOT a filled background pill. A filled block is a large high-contrast
+# rectangle sitting in the corner of your eye at all times — it dominates the
+# bar and is the single most distracting element on it. An underline carries
+# exactly the same information with a fraction of the visual weight.
+FG_ACTIVE="#7aa2f7"     # active: accent-coloured, underlined
+FG_OCCUPIED="#a9b1d6"   # has windows, not focused
+FG_EMPTY="#3b4261"      # empty: barely there
 
 command -v wmctrl >/dev/null 2>&1 || { echo "wmctrl missing"; exit 0; }
 
@@ -61,10 +65,13 @@ render() {
         num=$((d + 1))
 
         if [ "$d" = "$current" ]; then
-            # Current desktop: highlighted. Show its icons, or the number when
-            # empty so the active marker is never blank.
+            # Current desktop: accent colour + thin underline. %{u...} sets the
+            # underline colour and %{+u} enables it; needs line-size > 0 in
+            # config.ini. Deliberately NOT a filled background pill — that is a
+            # large high-contrast rectangle permanently in the corner of your
+            # eye, and it dominates the whole bar.
             body="${icons:-$num}"
-            entry="%{B${BG_ACTIVE}}%{F${FG_ACTIVE}} ${body} %{F-}%{B-}"
+            entry="%{u${FG_ACTIVE}}%{+u}%{F${FG_ACTIVE}} ${body} %{F-}%{-u}"
         elif [ -n "$icons" ]; then
             entry="%{F${FG_OCCUPIED}} ${icons} %{F-}"
         else

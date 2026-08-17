@@ -116,6 +116,21 @@ cmd_focus() {
     fi
 }
 
+# Compact play/pause glyph for the minimal bar: no title, no artist, just the
+# transport state. Prints nothing when no player is running, so the three
+# transport buttons collapse rather than sitting there dead.
+cmd_state_icon() {
+    have_playerctl || return 0
+    local player status
+    player="$(pick_player)" || return 0
+    status="$(playerctl -p "$player" status 2>/dev/null)"
+    case "$status" in
+        Playing) printf '%s\n' $'\uf04c' ;;   # fa-pause  (click to pause)
+        Paused)  printf '%s\n' $'\uf04b' ;;   # fa-play   (click to resume)
+        *)       return 0 ;;
+    esac
+}
+
 case "${1:-status}" in
     status)      cmd_status ;;
     play-pause)  pc play-pause ;;
@@ -126,10 +141,11 @@ case "${1:-status}" in
     focus)       cmd_focus ;;
     volume-up)   pc volume 0.05+ ;;
     volume-down) pc volume 0.05- ;;
-    next-icon)   cmd_icon "" ;;
-    prev-icon)   cmd_icon "" ;;
+    state-icon)  cmd_state_icon ;;
+    next-icon)   cmd_icon $'\uf051' ;;
+    prev-icon)   cmd_icon $'\uf048' ;;
     *)
-        echo "usage: $(basename "$0") <status|play-pause|play|pause|next|previous|focus|volume-up|volume-down>" >&2
+        echo "usage: $(basename "$0") <status|state-icon|play-pause|play|pause|next|previous|focus|volume-up|volume-down|prev-icon|next-icon>" >&2
         exit 1
         ;;
 esac
