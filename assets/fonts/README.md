@@ -1,48 +1,48 @@
 # Nerd Fonts
 
-This is an archived font from the Nerd Fonts release v3.1.1.
+Archived from the Nerd Fonts release **v3.4.0**.
 
-For more information see:
 * https://github.com/ryanoasis/nerd-fonts/
 * https://github.com/ryanoasis/nerd-fonts/releases/latest/
 
-# Hack
+# JetBrains Mono
 
-A typeface designed for source code.
+A typeface designed for developers, patched by Nerd Fonts to add the icon
+glyphs used by the prompt (oh-my-posh), the tmux status bar, eza's `--icons`,
+and the polybar top bar.
 
-For more information have a look at the upstream website: https://github.com/source-foundry/Hack
+* https://www.jetbrains.com/lp/mono/
 
-Version: 3.003
+## Variants
 
-## Which font?
+Three widths ship here, each in Regular / Bold / Italic / BoldItalic:
 
-### TL;DR
+| File prefix | Family name | Use |
+|---|---|---|
+| `JetBrainsMonoNerdFontMono-` | `JetBrainsMono Nerd Font Mono` | Terminals. Icons forced to single-cell width — this is what kitty uses. |
+| `JetBrainsMonoNerdFont-` | `JetBrainsMono Nerd Font` | Icons keep their natural width. Used by polybar. |
+| `JetBrainsMonoNerdFontPropo-` | `JetBrainsMono Nerd Font Propo` | Proportional. Not currently referenced. |
 
-* Pick your font family:
-  * If you are limited to monospaced fonts (because of your terminal, etc) then pick a font with `Nerd Font Mono` (or `NFM`).
-  * If you want to have bigger icons (usually around 1.5 normal letters wide) pick a font without `Mono` i.e. `Nerd Font` (or `NF`). Most terminals support this, but ymmv.
-  * If you work in a proportional context (GUI elements or edit a presentation etc) pick a font with `Nerd Font Propo` (or `NFP`).
+Getting this distinction wrong is the usual cause of misaligned or clipped
+icons: a terminal needs the **Mono** variant, a status bar generally does not.
 
-### Ligatures
+## Installation
 
-Ligatures are generally preserved in the patched fonts.
-Nerd Fonts `v2.0.0` had no ligatures in the `Nerd Font Mono` fonts, this has been dropped with `v2.1.0`.
-If you have a ligature-aware terminal and don't want ligatures you can (usually) disable them in the terminal settings.
+`profiles/terminal-setup.sh` copies these to `~/.local/share/fonts` and runs
+`fc-cache`. Manually:
 
-### Explanation
+```bash
+cp assets/fonts/*.ttf ~/.local/share/fonts/
+fc-cache -f
+```
 
-Once you narrow down your font choice of family (`Droid Sans`, `Inconsolata`, etc) and style (`bold`, `italic`, etc) you have 2 main choices:
+Verify the family names resolve:
 
-#### `Option 1: Download already patched font`
+```bash
+fc-list : family | tr ',' '\n' | grep -i jetbrains | sort -u
+```
 
- * For a stable version download a font package from the [release page](https://github.com/ryanoasis/nerd-fonts/releases)
- * Or download the development version from the folders here
+## Licence
 
-#### `Option 2: Patch your own font`
-
- * Patch your own variations with the various options provided by the font patcher (i.e. not include all symbols for smaller font size)
-
-For more information see: [The FAQ](https://github.com/ryanoasis/nerd-fonts/wiki/FAQ-and-Troubleshooting#which-font)
-
-[SIL-RFN]:http://scripts.sil.org/cms/scripts/page.php?item_id=OFL_web_fonts_and_RFNs#14cbfd4a
-
+JetBrains Mono is licensed under the SIL Open Font License 1.1 — see
+`LICENSE.md`.
