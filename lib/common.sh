@@ -74,7 +74,7 @@ detect_os() {
     if [[ -f /etc/os-release ]]; then
         . /etc/os-release
         echo "$ID"
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
+    elif [[ "${OSTYPE:-}" == "darwin"* ]]; then
         echo "macos"
     else
         echo "unknown"
@@ -92,28 +92,41 @@ detect_ubuntu_codename() {
 }
 
 # Detect display server (X11 or Wayland)
+# NOTE: every caller runs under `set -u`, so these MUST use ${VAR:-} — a bare
+# "$WAYLAND_DISPLAY" aborts the script on any box where the variable is unset
+# (i.e. every X11 session, and every headless/SSH session).
 detect_display_server() {
-    if [[ -n "$WAYLAND_DISPLAY" ]]; then
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
         echo "wayland"
-    elif [[ -n "$DISPLAY" ]]; then
+    elif [[ -n "${DISPLAY:-}" ]]; then
         echo "x11"
     else
         echo "unknown"
     fi
 }
 
-# Get appropriate clipboard command
-get_clipboard_cmd() {
-    local display_server=$(detect_display_server)
-
-    if [[ "$display_server" == "wayland" ]] && command -v wl-copy >/dev/null 2>&1; then
-        echo "wl-copy"
-    elif [[ "$display_server" == "x11" ]] && command -v xclip >/dev/null 2>&1; then
-        echo "xclip -selection clipboard"
-    else
-        echo ""
-    fi
-}
+# A stdin source that is safe to redirect from.
+#
+# Several third-party installers (Oh My Zsh, rustup, ...) hang when stdin is a
+# pipe, so the usual fix is `<​/dev/tty`. But in a container, a CI runner, or
+# under `ssh -T` there IS no /dev/tty, and redirecting from it fails outright —
+# which previously got swallowed by `|| true` and reported as success.
+#
+# Use as:  some-installer <"$TTY_STDIN"
+#
+# The probe runs in a subshell with stderr redirected FIRST. Redirections are
+# applied left to right, so `: </dev/tty 2>/dev/null` still prints
+# "/dev/tty: No such device or address" — the failing redirect happens before
+# stderr is silenced. Order matters here.
+if ( exec 2>/dev/null </dev/tty ); then
+    TTY_STDIN=/dev/tty
+else
+    TTY_STDIN=/dev/null
+fi
+export TTY_STDIN
+# Backwards-compatible alias used by the Oh My Zsh step.
+OMZ_STDIN="$TTY_STDIN"
+export OMZ_STDIN
 
 # ============================================================================
 # VALIDATION FUNCTIONS
@@ -144,13 +157,57 @@ check_sudo() {
 }
 
 # Check internet connectivity
+# Verify we can actually reach the network.
+#
+# Deliberately does NOT use `ping`:
+#   * `iputils-ping` is absent from most minimal images (including this repo's
+#     own tests/docker image), so the probe failed on a machine with perfectly
+#     working networking. That made profiles/install-packages.sh abort at step
+#     1/5 and meant its test suite never ran a single assertion.
+#   * ICMP to 8.8.8.8 is blocked outright on plenty of corporate networks and
+#     cloud VPCs, while HTTPS works fine.
+#
+# What the installers actually need is DNS + outbound HTTPS, so probe for that
+# instead, in order of preference, falling back through what is available.
 check_internet() {
     log_info "Checking internet connectivity..."
-    if ! ping -c 1 8.8.8.8 >/dev/null 2>&1 && ! ping -c 1 1.1.1.1 >/dev/null 2>&1; then
-        log_error "No internet connection detected. This script requires internet access."
-        return 1
+
+    # 1. HTTPS to a host we genuinely depend on. curl is a hard dependency of
+    #    every installer here, so it is essentially always present.
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsS --max-time 8 -o /dev/null https://github.com 2>/dev/null; then
+            log_success "Internet connection verified"
+            return 0
+        fi
     fi
-    log_success "Internet connection verified"
+
+    # 2. wget, for images that ship it instead of curl.
+    if command -v wget >/dev/null 2>&1; then
+        if wget -q --spider --timeout=8 https://github.com 2>/dev/null; then
+            log_success "Internet connection verified"
+            return 0
+        fi
+    fi
+
+    # 3. DNS only. Proves resolution works even if HTTPS is proxied in a way
+    #    the two probes above cannot negotiate.
+    if command -v getent >/dev/null 2>&1; then
+        if getent hosts github.com >/dev/null 2>&1; then
+            log_warning "HTTPS probe failed but DNS resolves — continuing"
+            return 0
+        fi
+    fi
+
+    # 4. Last resort: ICMP, if ping happens to exist.
+    if command -v ping >/dev/null 2>&1; then
+        if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 || ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+            log_success "Internet connection verified (ICMP)"
+            return 0
+        fi
+    fi
+
+    log_error "No internet connection detected. This script requires internet access."
+    return 1
 }
 
 # Check disk space (minimum in MB)
@@ -163,25 +220,6 @@ check_disk_space() {
         return 1
     fi
     log_success "Disk space check passed (${available_mb}MB available)"
-}
-
-# Check if command exists
-check_command() {
-    local cmd=$1
-    local required=${2:-false}
-
-    if command -v "$cmd" >/dev/null 2>&1; then
-        log_success "$cmd is installed"
-        return 0
-    else
-        if [[ "$required" == "true" ]]; then
-            log_error "$cmd is required but not installed"
-            return 1
-        else
-            log_warning "$cmd is not installed"
-            return 1
-        fi
-    fi
 }
 
 # ============================================================================
@@ -239,66 +277,6 @@ safe_symlink() {
 # DOWNLOAD FUNCTIONS
 # ============================================================================
 
-# Download file with checksum verification
-download_with_checksum() {
-    local url=$1
-    local output=$2
-    local expected_checksum=$3
-    local checksum_type=${4:-sha256}  # Default to sha256
-
-    log_info "Downloading $url..."
-
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would download: $url to $output"
-        return 0
-    fi
-
-    # Ensure output directory exists
-    ensure_dir "$(dirname "$output")"
-
-    # Download file
-    if command -v wget >/dev/null 2>&1; then
-        wget -q --show-progress -O "$output" "$url" || return 1
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o "$output" "$url" || return 1
-    else
-        log_error "Neither wget nor curl is installed"
-        return 1
-    fi
-
-    # Verify checksum if provided
-    if [[ -n "$expected_checksum" ]]; then
-        log_info "Verifying checksum..."
-        local actual_checksum
-        case "$checksum_type" in
-            sha256)
-                actual_checksum=$(sha256sum "$output" | awk '{print $1}')
-                ;;
-            sha512)
-                actual_checksum=$(sha512sum "$output" | awk '{print $1}')
-                ;;
-            md5)
-                actual_checksum=$(md5sum "$output" | awk '{print $1}')
-                ;;
-            *)
-                log_error "Unsupported checksum type: $checksum_type"
-                return 1
-                ;;
-        esac
-
-        if [[ "$actual_checksum" != "$expected_checksum" ]]; then
-            log_error "Checksum verification failed!"
-            log_error "Expected: $expected_checksum"
-            log_error "Got:      $actual_checksum"
-            rm -f "$output"
-            return 1
-        fi
-        log_success "Checksum verification passed"
-    fi
-
-    log_success "Download complete: $output"
-}
-
 # ============================================================================
 # PACKAGE MANAGEMENT
 # ============================================================================
@@ -321,6 +299,30 @@ apt_install() {
 # ============================================================================
 
 # Ask for user confirmation
+# Single-character prompt that echoes the chosen key to STDOUT.
+#
+# Differs from confirm() below: confirm() returns an exit status and is for
+# plain yes/no gates, whereas prompt_yn echoes the raw key so the caller can
+# switch on multi-way choices (e.g. bar-setup's [r]emove / [a]utohide / [n]one).
+#
+# Honours $NONINTERACTIVE (returns $default without prompting), so profiles run
+# unattended in CI and from desktop-setup.sh.
+#
+# Reads from $TTY_STDIN, not /dev/tty — in a container or under `ssh -T` there
+# is no /dev/tty and the redirect fails outright.
+#
+# Usage: reply=$(prompt_yn "Question? [y/N] " "n")
+prompt_yn() {
+    local question="$1" default="${2:-n}"
+    if [[ ${NONINTERACTIVE:-0} -eq 1 ]]; then
+        echo "$default"
+        return 0
+    fi
+    read -rp "$question" -n 1 <"$TTY_STDIN"
+    echo >&2
+    echo "${REPLY:-$default}"
+}
+
 confirm() {
     local prompt="${1:-Do you want to continue?}"
     local default="${2:-n}"  # Default to 'n' for safety
