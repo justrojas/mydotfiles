@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: spotify-control
-Version: 0.1
-Requires-Dist: spotipy
-Requires-Dist: dbus-python
-Requires-Dist: PyGObject
-Requires-Dist: python-dotenv
-Dynamic: requires-dist

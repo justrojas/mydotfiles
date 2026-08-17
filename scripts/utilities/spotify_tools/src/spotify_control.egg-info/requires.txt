@@ -1,4 +1,0 @@
-spotipy
-dbus-python
-PyGObject
-python-dotenv

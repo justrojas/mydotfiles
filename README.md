@@ -7,12 +7,19 @@ Clone this repo, run one script, and have a fully configured shell on any machin
 
 | Tool | Config location |
 |---|---|
+| **bash** (default shell) | `config/bash/.bashrc` |
 | **zsh** | `config/zsh/.zshrc` |
-| **oh-my-posh** | `config/zsh/oh-my-posh.omp.json` |
+| **shared shell layer** | `config/shell/{env,aliases,switch}.sh` |
+| **oh-my-posh** | `config/oh-my-posh/tokyonight_storm.omp.json` |
 | **tmux** | `config/tmux/tmux.conf` |
 | **kitty** | `config/kitty/kitty.conf` |
+| **polybar** (top bar) | `config/polybar/config.ini` |
+| **herdr** | `config/herdr/config.toml` |
 | **neovim** | NvChad (cloned on install) |
 | **KDE Plasma** | `config/kde/` |
+
+`config/shell/` holds everything that is not shell-specific and is sourced by
+both `.bashrc` and `.zshrc`, so aliases and `$PATH` never drift between them.
 
 ## Quick start
 
@@ -26,23 +33,39 @@ bash install.sh
 
 ### Installation profiles
 
-The interactive menu offers two options:
+The interactive menu offers four options:
 
 **1 — Terminal Setup** (no sudo required)
-- Links all configs via symlinks (`~/.zshrc`, `~/.config/tmux`, `~/.config/kitty`)
+- Links all configs via symlinks (`~/.bashrc`, `~/.zshrc`, `~/.config/tmux`, `~/.config/kitty`)
 - Installs oh-my-zsh, zsh plugins, oh-my-posh, NvChad
-- Assumes packages (zsh, tmux, kitty, nvim) are already installed
+- Assumes packages (bash, zsh, tmux, kitty, nvim) are already installed
 - Safe to run on any machine, including restricted work environments
 
 **2 — Desktop Setup** (Ubuntu/Debian, requires sudo)
 - Installs all packages via apt + third-party repos (eza, glow, zoxide, neovim)
 - Then runs Terminal Setup non-interactively
-- Optionally installs KDE Plasma customisations (themes, latte-dock, Ant-Dark)
+- Optionally installs KDE Plasma customisations (Kvantum/Ant-Dark theme,
+  Touchegg gestures, Firefox userChrome, global shortcuts, focus ring)
+- Optionally installs the polybar top bar
+
+**3 — VM / Headless Setup** (Ubuntu/Debian, requires sudo)
+- Shell + neovim + tmux + the CLI tools the shared aliases depend on
+- Deliberately skips kitty, Nerd fonts, herdr, KDE and the top bar — none of
+  them do anything without a display. Your *client* terminal supplies the font
+  and the terminfo entry when you SSH in.
+- Equivalent to `terminal-setup.sh --minimal` plus a trimmed apt package list
+
+**4 — Top Bar only** (Ubuntu/Debian, X11)
+- Installs polybar + playerctl and links `config/polybar/`
+- Offers to disable Latte Dock, since two bars would overlap
 
 Run a profile directly if you don't want the menu:
 
 ```bash
 bash profiles/terminal-setup.sh --non-interactive
+bash profiles/terminal-setup.sh --minimal      # skip all GUI components
+bash profiles/vm-setup.sh --dry-run
+bash profiles/bar-setup.sh
 bash profiles/desktop-setup.sh --dry-run
 ```
 
@@ -59,9 +82,11 @@ tmux
 nvim
 ```
 
-**zsh** — reload your shell:
+**shell** — open a new terminal. bash is the default; zsh is one command away:
 ```
-exec zsh
+shell-toggle    # flip the persistent preference and switch now
+tozsh / tobash  # one-off switch, preference unchanged
+shell-pref      # show current + preferred
 ```
 
 ## Tmux keybindings
@@ -102,44 +127,147 @@ kt set <name>        # apply a theme by name
 kt preview <name>    # preview without applying
 ```
 
-## Zsh features
+## Shell features
 
-- **Prompt**: oh-my-posh with atomic layout — muted two-line powerline theme
-- **Plugins**: zsh-autosuggestions, zsh-syntax-highlighting, fzf, git, sudo
-- **Navigation**: zoxide replaces `cd` (learns frequently used directories)
-- **File listing**: eza aliases (`l`, `ls`, `la`, `ld`)
-- **Key bindings**:
+**bash is the default interactive shell.** zsh remains fully configured; the
+two are kept at feature parity and share `config/shell/`.
+
+- **Prompt**: oh-my-posh, Tokyo Night Storm — two-line powerline theme
+- **Autosuggestions + syntax highlighting**: via [ble.sh](https://github.com/akinomyoga/ble.sh)
+  in bash, zsh-autosuggestions/zsh-syntax-highlighting in zsh. Grey ghost text
+  from history — press `→` or `Ctrl-F` to accept.
+- **Navigation**: zoxide replaces `cd` (learns frequently used directories);
+  `cdi` opens an interactive picker
+- **File listing**: eza aliases (`l`, `ls`, `la`, `ld`) — these fall back to
+  plain `ls` when eza isn't installed, so a minimal box still works
+- **Fuzzy find**: `fcd` jumps to the directory of an fzf-selected file;
+  `Ctrl+R` / `Ctrl+T` / `Alt+C` are the standard fzf widgets
+- **Key bindings** (identical in both shells):
   - `Ctrl+N` — open neovim in current directory
   - `Ctrl+G` — launch opencode
   - `Ctrl+P` — clear screen
-- **Lazy loading**: NVM and kubectl completions load on first use (faster shell start)
-- **Work config**: create `~/.zshrc.work` for machine-specific config (not tracked)
+- **Lazy loading**: NVM and kubectl completions load on first use (faster start)
+- **Docker helpers**: `dls`, `dsh`, `dkill`, `drm`, ... from `config/shell/docker_functions.bash`
+- **Work config**: `~/.bashrc.work` / `~/.zshrc.work` for machine-specific config (not tracked)
+
+### Why ble.sh
+
+Bash has no native equivalent of `zsh-autosuggestions` (inline grey completion
+from history) or `zsh-syntax-highlighting` (commands coloured as you type).
+ble.sh replaces readline outright and provides both, so moving from zsh to bash
+does not mean losing them.
+
+It is loaded in two phases in `.bashrc` — sourced with `--attach=none` near the
+top, then `ble-attach` as the very last statement. Attaching early would let it
+capture `PROMPT_COMMAND` before oh-my-posh sets it, and the prompt renders
+wrong. If ble.sh is not installed, bash silently falls back to plain readline.
+
+Building it needs **gawk** (the build rejects Ubuntu's default mawk) and
+`make`; `terminal-setup.sh` installs both.
+
+> Tab is deliberately left on readline's default `complete` action. An earlier
+> revision bound it to `menu-complete`, which cycles through matches instead of
+> completing the shared prefix — that feels like completion is broken. Shift-Tab
+> cycles if you want that behaviour.
+
+### Switching shells
+
+The shell you land in is decided by `~/.config/shell/preferred`, **not** by
+your login shell. Every interactive shell reads it on startup and re-execs
+toward it (loop-guarded). This means new terminals, tmux panes and herdr panes
+all agree, without needing `chsh`.
+
+## Top bar
+
+A floating, Waybar-style polybar with per-module rounded pills and a Tokyo
+Night Storm palette.
+
+> **Why polybar, not waybar?** Waybar positions itself using the `wlr-layer-shell`
+> protocol, which is Wayland-only. This setup is KDE Plasma on **X11**, where
+> waybar cannot anchor to a screen edge at all. Polybar is the X11 equivalent
+> with the same declarative-config / script-module model.
+>
+> Note that "upgrade to Plasma 6 to keep polybar" does not work either: Plasma 6
+> is Wayland-by-default and its X11 session is deprecated. If Plasma 6 ever
+> happens here it should be a clean install, and the bar choice at that point is
+> waybar-on-Wayland or a real Hyprland setup. See `docs/CLAUDE.md`.
+
+```bash
+bash profiles/bar-setup.sh   # install
+bar                          # launch (also autostarts on login)
+```
+
+| Region | Modules |
+|---|---|
+| Left | launcher, KDE virtual desktops |
+| Center | Spotify: ◀ / track / ▶ |
+| Right | volume, memory, CPU, temperature, battery, network, clock, power |
+
+`config/polybar/launch.sh` detects your network interface, battery and adapter
+names at runtime and spawns one bar per connected monitor, so the config file
+stays portable across machines.
+
+### Spotify / media controls
+
+The center module talks to **MPRIS over D-Bus via `playerctl`** — no OAuth, no
+credentials, no network round-trip, and it works with any player (Spotify, mpv,
+VLC, Firefox), not just Spotify.
+
+| Interaction | Action |
+|---|---|
+| Click track | Play / pause |
+| Click ◀ / ▶ | Previous / next |
+| Scroll over track | Volume down / up |
+| Right-click track | Focus the player window |
+
+> A previous `scripts/utilities/spotify_tools/` package did this through the
+> Spotify **Web API** — OAuth credentials on every machine, a 5s poll, and a
+> *fake* MPRIS bus. It has been removed. The one thing it could do that MPRIS
+> cannot is save/like a track; if you want that back, it needs the Web API and
+> belongs in its own tool rather than in the bar's hot path.
 
 ## Repository structure
 
 ```
 my-dotfiles/
 ├── config/
+│   ├── shell/                      # shared by BOTH bash and zsh
+│   │   ├── env.sh                  # PATH, EDITOR, TERM sanity check
+│   │   ├── aliases.sh              # guarded aliases (degrade if tool absent)
+│   │   ├── switch.sh               # bash<->zsh preference + toggle
+│   │   └── docker_functions.bash   # lazy-loaded docker helpers
+│   ├── bash/
+│   │   ├── .bashrc                 # symlinked to ~/.bashrc  (default shell)
+│   │   └── .bash_profile           # symlinked to ~/.bash_profile
 │   ├── zsh/
 │   │   ├── .zshrc                  # symlinked to ~/.zshrc
-│   │   ├── oh-my-posh.omp.json     # prompt theme
-│   │   └── docker_functions.bash   # lazy-loaded docker helpers
+│   │   └── oh-my-posh.omp.json     # legacy prompt theme
+│   ├── oh-my-posh/
+│   │   ├── tokyonight_storm.omp.json
+│   │   └── theme-mappings.conf     # kitty theme -> omp theme
+│   ├── polybar/
+│   │   ├── config.ini              # top bar: modules, colours, layout
+│   │   ├── launch.sh               # detects iface/battery/monitors, spawns bars
+│   │   └── scripts/spotify.sh      # MPRIS control via playerctl
+│   ├── herdr/config.toml
 │   ├── tmux/
 │   │   ├── tmux.conf               # symlinked to ~/.config/tmux
 │   │   └── plugins/                # git submodules (tpm, sensible, yank, ...)
 │   ├── kitty/
 │   │   ├── kitty.conf              # symlinked to ~/.config/kitty
 │   │   ├── theme.conf              # active theme (symlink into kitty-themes/)
-│   │   └── kitty-themes/           # 200+ theme files
+│   │   └── kitty-themes/           # 169 theme files
 │   └── kde/
-│       ├── latte/                  # latte-dock layouts
+│       ├── latte/                  # DEPRECATED latte-dock layouts (unused)
 │       ├── Kvantum/                # Kvantum theme (Ant-Dark)
 │       ├── touchegg/               # touchpad gesture config
 │       ├── shortcuts/              # KDE keyboard shortcut exports
 │       └── applications/firefox/   # Firefox userChrome.css customisations
 ├── profiles/
-│   ├── terminal-setup.sh           # config only, no sudo
-│   ├── desktop-setup.sh            # packages + terminal + optional KDE
+│   ├── terminal-setup.sh           # config only, no sudo (--minimal for headless)
+│   ├── desktop-setup.sh            # packages + terminal + optional KDE + bar
+│   ├── vm-setup.sh                 # headless: shell + nvim + tmux + CLI tools
+│   ├── bar-setup.sh                # polybar + playerctl
 │   ├── install-packages.sh         # apt installs (called by desktop-setup)
 │   └── kde-setup.sh                # KDE themes and desktop customisations
 ├── lib/
@@ -147,14 +275,16 @@ my-dotfiles/
 ├── scripts/
 │   ├── install.sh                  # redirects to root install.sh (legacy)
 │   └── utilities/
-│       └── kt                      # kitty theme switcher
+│       ├── kt                      # kitty theme switcher
+│       └── kde-active-outline.sh   # focus ring for KDE/X11
 ├── assets/
-│   └── fonts/                      # Hack Nerd Font variants
+│   └── fonts/                      # JetBrainsMono Nerd Font variants
 ├── tests/
 │   ├── docker/
 │   │   └── Dockerfile              # parameterised Ubuntu 22.04 / 24.04 image
 │   ├── test-terminal-setup.sh      # assertions for terminal-setup.sh
 │   ├── test-install-packages.sh    # assertions for install-packages.sh
+│   ├── test-vm-setup.sh            # assertions for vm-setup.sh
 │   └── run-docker-tests.sh         # test runner
 └── install.sh                      # interactive entry point
 ```
@@ -170,6 +300,9 @@ bash tests/run-docker-tests.sh
 # Run only the terminal setup suite on Ubuntu 22.04
 bash tests/run-docker-tests.sh --suite terminal --ubuntu 2204
 
+# Verify the VM profile installs the shell env AND skips the GUI components
+bash tests/run-docker-tests.sh --suite vm --ubuntu 2204
+
 # Keep the container after a failure to inspect it
 bash tests/run-docker-tests.sh --suite packages --keep
 ```
@@ -182,24 +315,119 @@ On failure the output shows exactly which assertion failed:
 Results: 11 passed, 2 failed
 ```
 
-## Work / machine-specific config
+## Utility scripts
 
-Anything that should not be committed (employer tokens, ROS environment variables, machine-specific paths) goes in `~/.zshrc.work`. This file is sourced automatically if it exists and is excluded from git.
+All `scripts/utilities/*.sh` are symlinked into `~/.local/bin` by
+`terminal-setup.sh`, so they are on PATH as plain commands.
+
+| Command | What it does |
+|---|---|
+| `kt` | kitty theme switcher (see above) |
+| `kde-active-outline.sh` | Draw a coloured ring around the focused window (KDE/X11) |
+| `ssh_gen.sh` | Interactive SSH key generator, copies the pubkey to the clipboard |
+| `firefox_fix.sh <url>` | Open a URL in a new Firefox window, optionally fullscreen |
+| `claude_launcher.sh` | `firefox_fix.sh https://claude.ai/new` |
+| `drive.sh` | Mount OneDrive via rclone. **Requires `rclone`, which no profile installs.** |
+
+### Active window outline
+
+With tiling enabled and a dark decoration, Plasma gives almost no cue as to
+which window has focus — it differentiates only by a subtle titlebar shade,
+which disappears entirely on tiled or maximised windows where the titlebar is
+hidden.
+
+`kde-active-outline.sh` fixes that using the `kwin4_effect_shapecorners` effect
+(shipped in `scripts/packages/`, installed by `kde-setup.sh`):
 
 ```bash
-# ~/.zshrc.work  (example)
+kde-active-outline.sh                  # apply, Tokyo Night blue, 2px
+kde-active-outline.sh --color f7768e   # different colour
+kde-active-outline.sh --thickness 3    # thicker ring
+kde-active-outline.sh --show           # print current settings
+kde-active-outline.sh --off            # remove it
+```
+
+Inactive windows deliberately get **no** outline — a dim one reads as
+"sort of focused" and defeats the purpose. Requires compositing to be enabled.
+
+## Work / machine-specific config
+
+Machine-specific config (ROS environment, kubeconfig paths) goes in
+`~/.bashrc.work` or `~/.zshrc.work`. These are sourced automatically if present
+and are excluded from git.
+
+```bash
+# ~/.bashrc.work  (example)
 export ROS_DOMAIN_ID=42
 export KUBECONFIG=~/.kube/work-cluster.yaml
-source /opt/ros/humble/setup.zsh
+source /opt/ros/humble/setup.bash
+```
+
+**Secrets** (API tokens, JWTs) go in `~/.env`, which is sourced at the end of
+both rc files. Never hardcode them into a tracked config — the rc files are
+symlinked out of this repo and will happily carry a token into git.
+
+```bash
+# ~/.env  (example)
+export NOCOBASE_TOKEN="..."
 ```
 
 ## Fonts
 
-Hack Nerd Font variants are included in `assets/fonts/`. The KDE setup script installs them system-wide. Install manually with:
+JetBrainsMono Nerd Font variants are included in `assets/fonts/` and are installed to
+`~/.local/share/fonts` by `terminal-setup.sh`. Install manually with:
 
 ```bash
-sudo cp assets/fonts/*.ttf /usr/share/fonts/
-sudo fc-cache -fv
+cp assets/fonts/*.ttf ~/.local/share/fonts/
+fc-cache -f
 ```
 
-Set **JetBrains Mono** as the kitty font (configured in `config/kitty/kitty.conf`).
+kitty is configured to use **JetBrainsMono Nerd Font Mono** at 13pt
+(`config/kitty/kitty.conf`). The polybar config uses the same family, so the
+bar renders boxes instead of icons if the fonts are missing.
+
+Nerd Fonts ships three widths and the distinction matters:
+
+| Family | Where |
+|---|---|
+| `JetBrainsMono Nerd Font Mono` | kitty — icons forced to one cell, which a terminal grid requires |
+| `JetBrainsMono Nerd Font` | polybar — icons keep natural width |
+| `JetBrainsMono Nerd Font Propo` | proportional, unused |
+
+Using the non-Mono variant in a terminal is the usual cause of powerline
+separators and eza icons overlapping the next character.
+
+Verify the families resolve:
+
+```bash
+fc-list : family | tr ',' '\n' | grep -i jetbrains | sort -u
+```
+
+## Terminal / terminfo
+
+kitty advertises `TERM=xterm-kitty`. That terminfo entry only exists where
+kitty has been installed, so on a fresh machine — or the far side of an SSH
+hop — full-screen TUIs fall back to guessing escape sequences. The visible
+symptom is **doubled keypresses and double backspaces**, most obviously inside
+herdr.
+
+Three things address this:
+
+1. `terminal-setup.sh` compiles the entry shipped in the kitty tarball into
+   `~/.terminfo` (no root needed), rather than relying on the apt
+   `kitty-terminfo` package having been installed at some point.
+2. `config/shell/env.sh` validates `$TERM` on startup and downgrades to
+   `xterm-256color` if it cannot be resolved.
+3. `config/shell/aliases.sh` aliases `ssh` to `kitten ssh` when running under
+   kitty, which copies the local terminfo to the remote host on connect.
+
+Check it with:
+
+```bash
+infocmp xterm-kitty >/dev/null && echo ok || echo missing
+```
+
+Note that apt on Ubuntu 22.04 ships kitty 0.21.2, which has a separate
+keyboard-protocol bug that also double-fires keys (fixed upstream in 0.33.0).
+`terminal-setup.sh` pins 0.47.4 from the official tarball and purges the apt
+package so the buggy binary can never be launched.

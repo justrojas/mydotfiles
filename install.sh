@@ -32,16 +32,24 @@ echo ""
 echo "Select a profile:"
 echo ""
 echo "  1) Terminal Setup"
-echo "     Configure tmux, kitty, neovim, zsh"
+echo "     Configure tmux, kitty, neovim, bash/zsh"
 echo "     No sudo required — links configs from this repo"
 echo ""
 echo "  2) Desktop Setup  (Ubuntu/Debian only)"
-echo "     Install all packages + configure terminal + optional KDE"
+echo "     Install all packages + configure terminal + optional KDE/top bar"
 echo "     Requires sudo"
 echo ""
-echo "  3) Quit"
+echo "  3) VM / Headless Setup  (Ubuntu/Debian only)"
+echo "     Shell + neovim + tmux + CLI tools. No GUI, no kitty, no fonts."
+echo "     Requires sudo"
 echo ""
-read -rp "Choice [1-3]: " -n 1 choice
+echo "  4) Top Bar only  (Ubuntu/Debian, X11)"
+echo "     Waybar-style polybar with Spotify/MPRIS controls"
+echo "     Requires sudo"
+echo ""
+echo "  5) Quit"
+echo ""
+read -rp "Choice [1-5]: " -n 1 choice
 echo ""
 
 run_profile() {
@@ -89,12 +97,48 @@ case "$choice" in
         ;;
 
     3)
+        if [[ ! "$OS" =~ ^(ubuntu|debian|pop|linuxmint)$ ]]; then
+            log_error "VM Setup only supports Ubuntu/Debian (detected: $OS)"
+            exit 1
+        fi
+        echo ""
+        log_info "VM Setup: shell + neovim + tmux + CLI tools (no GUI components)"
+        log_warning "Requires sudo access"
+        echo ""
+        read -rp "Continue? [y/N] " -n 1
+        echo ""
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            run_profile vm-setup.sh
+        else
+            log_info "Cancelled."
+        fi
+        ;;
+
+    4)
+        if [[ ! "$OS" =~ ^(ubuntu|debian|pop|linuxmint)$ ]]; then
+            log_error "Bar Setup only supports Ubuntu/Debian (detected: $OS)"
+            exit 1
+        fi
+        echo ""
+        log_info "Bar Setup: installs polybar + playerctl, links the bar config"
+        log_warning "Requires sudo. Offers to remove/hide top Plasma panels."
+        echo ""
+        read -rp "Continue? [y/N] " -n 1
+        echo ""
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            run_profile bar-setup.sh
+        else
+            log_info "Cancelled."
+        fi
+        ;;
+
+    5)
         log_info "Goodbye!"
         exit 0
         ;;
 
     *)
-        log_error "Invalid choice: $choice (expected 1-3)"
+        log_error "Invalid choice: $choice (expected 1-5)"
         exit 1
         ;;
 esac

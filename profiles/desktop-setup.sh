@@ -49,7 +49,7 @@ echo ""
 # ============================================================================
 # Step 1: Base tools
 # ============================================================================
-log_step "Step 1/3 — Install system packages"
+log_step "Step 1/4 — Install system packages"
 BASE_SCRIPT="$DOTFILES_DIR/profiles/install-packages.sh"
 if [[ ! -f "$BASE_SCRIPT" ]]; then
     log_error "install-packages.sh not found at $BASE_SCRIPT"
@@ -65,7 +65,7 @@ log_success "Base tools installed"
 # ============================================================================
 # Step 2: Terminal configuration
 # ============================================================================
-log_step "Step 2/3 — Terminal configuration"
+log_step "Step 2/4 — Terminal configuration"
 MINIMAL_SCRIPT="$DOTFILES_DIR/profiles/terminal-setup.sh"
 if [[ ! -f "$MINIMAL_SCRIPT" ]]; then
     log_error "terminal-setup.sh not found at $MINIMAL_SCRIPT"
@@ -79,7 +79,7 @@ log_success "Terminal configured"
 # ============================================================================
 # Step 3: KDE customisations (optional)
 # ============================================================================
-log_step "Step 3/3 — KDE Plasma customisations"
+log_step "Step 3/4 — KDE Plasma customisations"
 
 install_kde=false
 if [[ $NONINTERACTIVE -eq 0 ]]; then
@@ -101,6 +101,35 @@ else
 fi
 
 # ============================================================================
+# Step 4: Top bar (optional)
+# ============================================================================
+log_step "Step 4/4 — Top bar (polybar)"
+
+install_bar=false
+if [[ $NONINTERACTIVE -eq 0 ]]; then
+    echo ""
+    log_info "Installs a floating, Waybar-style top bar with per-module pills,"
+    log_info "a Tokyo Night palette, and Spotify/MPRIS controls via playerctl."
+    log_warning "This will offer to remove/hide any Plasma panel on the top edge."
+    echo ""
+    read -rp "Install the polybar top bar? [y/N] " -n 1
+    echo ""
+    [[ "$REPLY" =~ ^[Yy]$ ]] && install_bar=true
+fi
+
+BAR_SCRIPT="$DOTFILES_DIR/profiles/bar-setup.sh"
+if $install_bar; then
+    if [[ -f "$BAR_SCRIPT" ]]; then
+        bash "$BAR_SCRIPT" "${PASSTHROUGH_FLAGS[@]}"
+        log_success "Top bar installed"
+    else
+        log_error "Bar script not found at $BAR_SCRIPT"
+    fi
+else
+    log_info "Skipping top bar"
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -110,12 +139,14 @@ log_success "======================================"
 echo ""
 log_info "Installed and configured:"
 echo "  + Base development tools (git, zsh, tmux, kitty, neovim, fzf, eza, ...)"
-echo "  + Shell: zsh + Oh My Zsh + oh-my-posh"
-echo "  + Terminal configs (tmux, kitty, zsh, neovim/NvChad)"
-$install_kde && echo "  + KDE Plasma customisations"
+echo "  + Shell: bash (default) + zsh + Oh My Zsh + oh-my-posh"
+echo "  + Terminal configs (tmux, kitty, bash, zsh, neovim/NvChad)"
+$install_kde && echo "  + KDE Plasma customisations" || true
+$install_bar && echo "  + polybar top bar with Spotify controls" || true
 echo ""
 log_info "Next steps:"
-echo "  • Run 'exec zsh' or open a new terminal to load zsh"
+echo "  • Open a new terminal to load bash (run 'shell-toggle' to switch to zsh)"
 echo "  • Start tmux and press Ctrl+Space + I to install tmux plugins"
 echo "  • Run 'nvim' to bootstrap NvChad plugins"
-$install_kde && echo "  • Log out and back in to apply KDE changes"
+$install_kde && echo "  • Log out and back in to apply KDE changes" || true
+$install_bar && echo "  • Start the bar with 'bar' (it also autostarts on login)" || true

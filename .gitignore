@@ -1,8 +1,13 @@
 # Sensitive configuration files (tokens, secrets, etc.)
+# NOTE: secrets belong in ~/.env, which both rc files source last. Never put a
+# token in config/bash/.bashrc or config/zsh/.zshrc — those are TRACKED files
+# symlinked into $HOME, so anything hardcoded there lands in git.
 .env
 .env.*
 .zshrc.work
 .zshrc.local
+.bashrc.work
+.bashrc.local
 *.secret
 **/secrets.*
 
@@ -30,7 +35,17 @@ Thumbs.db
 # Misplaced config directories (managed by KDE, not tracked here)
 .config/latte/
 
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Runtime state accidentally captured from live config dirs
+*.lock
+.touchegg*.lock
+
 # Compiled/build artifacts
-scripts/packages/tmux-*/
 *.o
 *.a

@@ -1,8 +1,0 @@
-[console_scripts]
-spotify-like = spotify_control.like_song:main
-spotify-mpris = spotify_control.spotify_mpris:main
-spotify-next = spotify_control.next_song:main
-spotify-play-pause = spotify_control.play_pause:main
-spotify-previous = spotify_control.previous_song:main
-spotify-volume-down = spotify_control.volume_down:main
-spotify-volume-up = spotify_control.volume_up:main
