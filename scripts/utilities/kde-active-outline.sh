@@ -32,6 +32,17 @@
 #   kde-active-outline.sh --off              remove the outline (thickness 0)
 #   kde-active-outline.sh --show             print the current settings
 #
+# CONFIG LOCATION — this is the part that is easy to get wrong.
+#
+# The effect reads ~/.config/shapecornersrc, group [General]. It does NOT read
+# kwinrc's [Effect-shapecorners] group, despite that being where KWin effect
+# settings normally live and despite the config UI plugin exposing kcfg_*
+# names that look like kwinrc keys. Writing there is silently ignored: the
+# effect stays loaded, reports enabled, and simply draws nothing.
+#
+# Colours are R,G,B,A (four components). A three-component value is not
+# rendered.
+#
 # Requires: kwriteconfig5 / kreadconfig5 (plasma-desktop), qdbus.
 
 set -euo pipefail
@@ -70,16 +81,18 @@ for bin in kwriteconfig5 kreadconfig5; do
         echo "error: $bin not found (install plasma-desktop)" >&2; exit 1; }
 done
 
-GROUP="Effect-shapecorners"
+CONFIG_FILE="shapecornersrc"
+GROUP="General"
 
-# hex RRGGBB -> "R,G,B", the format KConfig uses for QColor.
-hex_to_rgb() {
-    local h="${1#\#}"
-    printf '%d,%d,%d' "0x${h:0:2}" "0x${h:2:2}" "0x${h:4:2}"
+# hex RRGGBB -> "R,G,B,A". The effect expects four components; three renders
+# as nothing.
+hex_to_rgba() {
+    local h="${1#\#}" alpha="${2:-255}"
+    printf '%d,%d,%d,%d' "0x${h:0:2}" "0x${h:2:2}" "0x${h:4:2}" "$alpha"
 }
 
-set_key() { kwriteconfig5 --file kwinrc --group "$GROUP" --key "$1" "$2"; }
-get_key() { kreadconfig5 --file kwinrc --group "$GROUP" --key "$1" 2>/dev/null; }
+set_key() { kwriteconfig5 --file "$CONFIG_FILE" --group "$GROUP" --key "$1" "$2"; }
+get_key() { kreadconfig5 --file "$CONFIG_FILE" --group "$GROUP" --key "$1" 2>/dev/null; }
 
 reload_kwin() {
     # Re-read config, then bounce the effect so the new values take hold.
@@ -91,11 +104,12 @@ reload_kwin() {
 
 case "$ACTION" in
     show)
-        echo "[$GROUP] in ~/.config/kwinrc"
+        echo "[$GROUP] in ~/.config/$CONFIG_FILE"
         for k in Size InactiveCornerRadius \
-                 OutlineThickness OutlineColor ActiveOutlineAlpha ActiveOutlineUseCustom \
-                 InactiveOutlineThickness InactiveOutlineColor InactiveOutlineAlpha InactiveOutlineUseCustom \
-                 DisableOutlineTile DisableOutlineMaximize; do
+                 OutlineColor OutlineThickness ActiveOutlineUseCustom ActiveOutlineUsePalette \
+                 InactiveOutlineColor InactiveOutlineThickness InactiveOutlineUseCustom \
+                 SecondOutlineThickness InactiveSecondOutlineThickness \
+                 DisableOutlineTile DisableOutlineMaximize IncludeNormalWindows; do
             printf '  %-26s %s\n' "$k" "$(get_key "$k" || echo '(unset)')"
         done
         echo ""
@@ -112,8 +126,9 @@ case "$ACTION" in
 esac
 
 # --- Apply ------------------------------------------------------------------
-# The effect must be enabled or none of this renders. Note the config key is
-# kwin4_effect_shapecornersEnabled, NOT shapecornersEnabled.
+# The effect must be enabled or none of this renders. Note the kwinrc key is
+# kwin4_effect_shapecornersEnabled, NOT shapecornersEnabled — but the effect's
+# OWN settings live in shapecornersrc (see the note at the top of this file).
 kwriteconfig5 --file kwinrc --group Plugins \
     --key kwin4_effect_shapecornersEnabled true
 
@@ -123,21 +138,25 @@ set_key Size "$CORNER_RADIUS"
 set_key InactiveCornerRadius "$CORNER_RADIUS"
 
 # Active outline.
-set_key OutlineThickness       "$ACTIVE_THICKNESS"
-set_key OutlineColor           "$(hex_to_rgb "$ACTIVE_COLOR")"
-set_key ActiveOutlineAlpha     "$ACTIVE_ALPHA"
-set_key ActiveOutlineUseCustom true
+set_key OutlineColor            "$(hex_to_rgba "$ACTIVE_COLOR" "$ACTIVE_ALPHA")"
+set_key OutlineThickness        "$ACTIVE_THICKNESS"
+set_key ActiveOutlineUseCustom  true
 set_key ActiveOutlineUsePalette false
 
-# Inactive outline: fully off.
+# Inactive outline: fully off. A dim outline reads as "sort of focused" and
+# defeats the point of having a focus indicator at all.
+set_key InactiveOutlineColor     "0,0,0,0"
 set_key InactiveOutlineThickness "$INACTIVE_THICKNESS"
-set_key InactiveOutlineAlpha     "$INACTIVE_ALPHA"
 set_key InactiveOutlineUseCustom true
 set_key InactiveOutlineUsePalette false
 
 # Secondary outlines off — one clear ring is the goal.
 set_key SecondOutlineThickness         0
 set_key InactiveSecondOutlineThickness 0
+
+# Make sure ordinary windows are actually decorated by the effect.
+set_key IncludeNormalWindows true
+set_key IncludeDialogs       true
 
 # CRITICAL for a tiling setup: by default the effect can skip the outline on
 # tiled and maximised windows, which is exactly when the titlebar cue is also
@@ -148,10 +167,12 @@ set_key DisableOutlineMaximize false
 reload_kwin
 
 echo "Active window outline applied:"
-echo "  colour     #${ACTIVE_COLOR}  ($(hex_to_rgb "$ACTIVE_COLOR"))"
+echo "  colour     #${ACTIVE_COLOR}  ($(hex_to_rgba "$ACTIVE_COLOR" "$ACTIVE_ALPHA"))"
 echo "  thickness  ${ACTIVE_THICKNESS}px"
 echo "  radius     ${CORNER_RADIUS}px"
 echo "  inactive   no outline"
+echo ""
+echo "Config written to ~/.config/$CONFIG_FILE [$GROUP]"
 echo ""
 echo "If nothing changed, compositing may be off:"
 echo "  System Settings > Display and Monitor > Compositor > Enable on startup"
