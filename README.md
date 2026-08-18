@@ -393,11 +393,44 @@ All `scripts/utilities/*.sh` are symlinked into `~/.local/bin` by
 | Command | What it does |
 |---|---|
 | `kt` | kitty theme switcher (see above) |
+| `shell-doctor.sh` | Explain why a terminal opened the shell it did |
 | `active-window-border.sh` | Start/stop the focus ring around the active window (X11) |
 | `ssh_gen.sh` | Interactive SSH key generator, copies the pubkey to the clipboard |
 | `firefox_fix.sh <url>` | Open a URL in a new Firefox window, optionally fullscreen |
 | `claude_launcher.sh` | `firefox_fix.sh https://claude.ai/new` |
 | `drive.sh` | Mount OneDrive via rclone. **Requires `rclone`, which no profile installs.** |
+
+### Which shell will a terminal open?
+
+Five independent things decide this, and they fail silently when they
+disagree — the symptom ("my terminal opens zsh") looks nothing like the cause:
+
+1. the login shell in `/etc/passwd` — used by everything non-interactive
+2. `~/.config/shell/preferred` — `switch.sh` redirects *interactive* shells only
+3. kitty's `shell` directive in `kitty.conf`
+4. herdr's `default_shell` in `config.toml`
+5. `$SHELL` in the running process, which is inherited and may be stale
+
+Both kitty and herdr **write their own config on first run** if none exists,
+and herdr seeds `default_shell` from `$SHELL` at that moment. Install the
+dotfiles on a machine whose login shell is still zsh, open herdr once before
+running setup, and every pane it opens is zsh forever after — regardless of
+what `preferred` says.
+
+```bash
+shell-doctor.sh     # prints all five at once and flags the mismatches
+```
+
+Fixing a machine that opens the wrong shell:
+
+```bash
+bash profiles/terminal-setup.sh --non-interactive   # re-link kitty + herdr configs
+sudo chsh -s "$(command -v bash)" "$USER"           # align the login shell
+```
+
+Note the username on `chsh`: `sudo chsh -s /bin/bash` without it changes
+**root's** shell, not yours. Then open a *new* terminal — a running shell keeps
+whatever it started with.
 
 ### Active window outline
 
