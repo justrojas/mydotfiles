@@ -151,6 +151,49 @@ class BorderWindow(Gtk.Window):
 
 
 _class_cache = {}
+_gtk_extents_cache = {}
+
+
+def gtk_frame_extents(xid, rect):
+    """Invisible shadow margins (left, right, top, bottom) for CSD windows.
+
+    GTK client-side-decorated apps draw their own drop shadow *inside* the
+    window, so the frame X reports is substantially larger than the window you
+    can see. Firefox and Zen report 45px on every side: a Zen window whose
+    visible bounds are 964,54 948x1138 reports 919,9 1038x1228. Tracing that
+    verbatim puts the ring 45px out on all sides, overlapping the neighbouring
+    tile — which is the "off-angle" border.
+
+    Apps without CSD (kitty, and anything using server-side decorations) do not
+    set the property at all, in which case there is nothing to subtract.
+
+    Cached on (xid, width, height) rather than xid alone: GTK zeroes these
+    margins when a window is maximised, so the value has to be re-read whenever
+    the geometry changes — but not on every poll tick.
+    """
+    key = (xid, rect.width, rect.height)
+    if key in _gtk_extents_cache:
+        return _gtk_extents_cache[key]
+
+    margins = (0, 0, 0, 0)
+    try:
+        out = subprocess.run(
+            ["xprop", "-id", str(xid), "_GTK_FRAME_EXTENTS"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        ).stdout
+        if "=" in out and "not found" not in out:
+            parts = [int(p.strip()) for p in out.split("=", 1)[1].split(",")]
+            if len(parts) == 4:
+                margins = tuple(parts)
+    except Exception:
+        pass
+
+    if len(_gtk_extents_cache) > 512:
+        _gtk_extents_cache.clear()
+    _gtk_extents_cache[key] = margins
+    return margins
 
 
 def window_class(gdk_window):
@@ -205,12 +248,20 @@ def main():
 
     border = BorderWindow(opts)
     screen = Gdk.Screen.get_default()
+    display = Gdk.Display.get_default()
 
     state = {"visible": False}
 
     def conceal():
         if state["visible"]:
             border.hide()
+            # Park it off-screen as well as unmapping it. KWin composites a
+            # drop shadow for the border window, and that shadow can briefly
+            # outlive the unmap — which shows up as a faint ghost of the ring
+            # when switching to an empty desktop. Moving it out of the viewport
+            # means there is nothing left in place to leave a smear.
+            border.move(-32000, -32000)
+            border._last = None
             state["visible"] = False
 
     def tick():
@@ -219,23 +270,12 @@ def main():
             conceal()
             return True
 
-        # Switching to a virtual desktop with no windows does NOT clear
-        # _NET_ACTIVE_WINDOW — it keeps pointing at the window that was focused
-        # on the previous desktop, which is now unmapped. Without this check we
-        # keep drawing the ring at that window's stale geometry, which is what
-        # produced both the "ghost" border on empty desktops and the ring
-        # appearing at the wrong position after a switch.
-        #
-        # A window on another desktop is unmapped, so is_viewable() is the
-        # cheap, native test for "actually on screen right now".
-        try:
-            if not active.is_viewable():
-                conceal()
-                return True
-        except Exception:
-            conceal()
-            return True
-
+        # NOTE: is_viewable() is deliberately NOT used to detect "window is on
+        # another desktop". Measured on KWin 5.27/X11, a window on a different
+        # virtual desktop still reports viewable=True, so that test is a no-op.
+        # What actually handles the empty-desktop case is the plasmashell entry
+        # in SKIP_CLASSES: switching to a desktop with no windows makes the
+        # desktop shell itself the active window.
         cls = window_class(active)
         if any(skip in cls for skip in SKIP_CLASSES):
             conceal()
@@ -251,24 +291,55 @@ def main():
             conceal()
             return True
 
+        # Strip the invisible CSD shadow, so the ring hugs the window the user
+        # can actually see rather than its shadow bounding box.
+        ml, mr, mt, mb = gtk_frame_extents(active.get_xid(), rect)
+        rx = rect.x + ml
+        ry = rect.y + mt
+        rw = max(1, rect.width - ml - mr)
+        rh = max(1, rect.height - mt - mb)
+
         bw = opts.width
         g = opts.gap
 
         if opts.mode == "outset":
             # Ring sits outside the frame. Looks best with tiling gaps; with
             # zero-gap tiling it spills off-screen and under neighbours.
-            x = rect.x - bw - g
-            y = rect.y - bw - g
-            w = rect.width + 2 * (bw + g)
-            h = rect.height + 2 * (bw + g)
+            x = rx - bw - g
+            y = ry - bw - g
+            w = rw + 2 * (bw + g)
+            h = rh + 2 * (bw + g)
         else:
             # Ring is drawn just inside the frame, overlapping the window's own
             # edge. Always fully visible regardless of gaps, which makes it the
             # safe default for edge-to-edge tiling.
-            x = rect.x + g
-            y = rect.y + g
-            w = max(1, rect.width - 2 * g)
-            h = max(1, rect.height - 2 * g)
+            x = rx + g
+            y = ry + g
+            w = max(1, rw - 2 * g)
+            h = max(1, rh - 2 * g)
+
+        # Clamp to the monitor's work area.
+        #
+        # Some clients report frame extents far larger than the window you can
+        # actually see, because the "frame" includes an invisible shadow and
+        # resize margin. Firefox is the worst offender here: measured at
+        # x=-37 w=1994 on a 1920-wide screen. Tracing that verbatim runs the
+        # ring off both edges and reads as a misaligned border.
+        #
+        # Work area rather than raw monitor geometry, so the ring also stays
+        # clear of the bar's reserved strut.
+        try:
+            monitor = display.get_monitor_at_window(active)
+            if monitor is not None:
+                wa = monitor.get_workarea()
+                x2 = min(x + w, wa.x + wa.width)
+                y2 = min(y + h, wa.y + wa.height)
+                x = max(x, wa.x)
+                y = max(y, wa.y)
+                w = max(1, x2 - x)
+                h = max(1, y2 - y)
+        except Exception:
+            pass
 
         geom = (x, y, w, h)
         if geom != border._last:
