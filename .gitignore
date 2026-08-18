@@ -27,6 +27,13 @@ Thumbs.db
 .vscode/
 .idea/
 
+# AI agent scratch directories. Ignored in-repo rather than via a personal
+# global excludes file, so the repo looks the same everywhere — a global
+# excludes file does not travel into a Docker build, which made the
+# idempotency suite report these as installer-created dirt.
+.claude/
+.opencode/
+
 # Cache and temporary files
 *.cache
 *.log

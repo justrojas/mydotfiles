@@ -8,7 +8,7 @@
 #   ./tests/run-docker-tests.sh [options]
 #
 # Options:
-#   -s, --suite SUITE    Run a specific test suite: terminal | packages | vm | kde | all (default: all)
+#   -s, --suite SUITE    Run a specific test suite: terminal | packages | vm | kde | idempotent | all (default: all)
 #   -u, --ubuntu VER     Ubuntu version to test against: 2204 | 2404 | all (default: all)
 #   -k, --keep           Keep containers after tests (useful for debugging)
 #   --dry-run            Pass --dry-run to install scripts (skips actual installs)
@@ -22,7 +22,7 @@ TESTS_DIR="$DOTFILES_ROOT/tests"
 
 # ── defaults ──────────────────────────────────────────────────────────────────
 UBUNTU_VERSIONS=("2204" "2404")
-SUITES=("terminal" "packages" "vm" "kde")
+SUITES=("terminal" "packages" "vm" "kde" "idempotent")
 KEEP=false
 DRY_RUN_FLAG=""
 SPECIFIC_VERSION=""
@@ -44,7 +44,7 @@ cat <<EOF
 Usage: $0 [options]
 
 Options:
-  -s, --suite SUITE    Test suite: terminal | packages | vm | kde | all  (default: all)
+  -s, --suite SUITE    Test suite: terminal | packages | vm | kde | idempotent | all  (default: all)
   -u, --ubuntu VER     Ubuntu version: 2204 | 2404 | all             (default: all)
   -k, --keep           Keep containers after tests for debugging
       --dry-run        Pass --dry-run to install scripts
@@ -101,6 +101,9 @@ suite_install_cmd() {
         # the apt/PPA/theme-clone steps; --import-shortcuts opts in to the
         # shortcut merge, which is otherwise skipped when non-interactive.
         kde)      echo "bash my-dotfiles/tests/fixtures/kde-setup-fixture.sh && bash my-dotfiles/profiles/kde-setup.sh --config-only --non-interactive --import-shortcuts $DRY_RUN_FLAG" ;;
+        # Runs the profile TWICE and snapshots state either side, so the
+        # assertions can prove the second run changed nothing.
+        idempotent) echo "bash my-dotfiles/tests/fixtures/idempotency-fixture.sh" ;;
         *) log_error "Unknown suite: $1"; exit 1 ;;
     esac
 }
@@ -112,6 +115,7 @@ suite_assert_script() {
         packages) echo "my-dotfiles/tests/test-install-packages.sh" ;;
         vm)       echo "my-dotfiles/tests/test-vm-setup.sh" ;;
         kde)      echo "my-dotfiles/tests/test-kde-setup.sh" ;;
+        idempotent) echo "my-dotfiles/tests/test-idempotency.sh" ;;
         *) log_error "Unknown suite: $1"; exit 1 ;;
     esac
 }
