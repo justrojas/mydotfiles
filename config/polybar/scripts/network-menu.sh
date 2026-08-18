@@ -103,8 +103,25 @@ ask_password() {
 # to one row per SSID, keeping the connected AP if there is one and otherwise
 # the strongest, then sort by signal with the connected network pinned first.
 # ---------------------------------------------------------------------------
+# nmcli triggers a fresh scan whenever NetworkManager considers its cache
+# stale, and blocks until it completes — measured at 3.6s here, against 28ms
+# when the cache is warm. That is the difference between a menu that opens
+# instantly and one that feels broken, and it is intermittent, so it looks like
+# random slowness rather than a scan.
+#
+# Always read the cache. NetworkManager scans periodically on its own, so the
+# list is current within a minute or so, and the explicit "rescan" entry in the
+# menu is there for when that isn't good enough.
+#
+# --rescan was added in nmcli 1.12 (Ubuntu 22.04 ships 1.36); fall back to a
+# plain list if it is rejected, rather than returning nothing.
+nmcli_wifi() {
+    nmcli -t -f IN-USE,SIGNAL,SSID device wifi list --rescan no 2>/dev/null ||
+        nmcli -t -f IN-USE,SIGNAL,SSID device wifi list 2>/dev/null
+}
+
 wifi_list() {
-    nmcli -t -f IN-USE,SIGNAL,SSID device wifi list 2>/dev/null |
+    nmcli_wifi |
         while IFS= read -r line; do
             local inuse signal ssid
             inuse="${line%%:*}";  line="${line#*:}"
@@ -189,7 +206,15 @@ rofi_menu() {
     case "$choice" in
         *"turn wifi off")   nmcli radio wifi off ;;
         *"turn wifi on")    nmcli radio wifi on ;;
-        *"rescan")          nmcli device wifi rescan 2>/dev/null; exec "$0" ;;
+        *"rescan")
+            # `nmcli device wifi rescan` returns as soon as the scan is
+            # requested, not when results arrive. Without a pause the menu
+            # reopens against the same cache it just refreshed, so the rescan
+            # appears to do nothing.
+            nmcli device wifi rescan 2>/dev/null
+            sleep 2
+            exec "$0"
+            ;;
         *"network settings") open_settings ;;
         *)
             # Strip the leading marker and the trailing signal bars to recover
