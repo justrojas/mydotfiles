@@ -137,7 +137,12 @@ install_packages() {
         papirus-icon-theme
 
         # Applications
-        kitty
+        # NOTE: kitty is deliberately NOT listed here. apt ships 0.21.2 on
+        # 22.04, whose Kitty-keyboard-protocol bug double-fires
+        # Enter/Tab/Backspace inside herdr. terminal-setup.sh installs the
+        # pinned 0.47.4 from the official tarball and purges the apt package;
+        # re-adding it here silently undid that on every desktop install,
+        # because desktop-setup runs kde-setup AFTER terminal-setup.
 
         # Build tools
         git cmake gettext extra-cmake-modules qttools5-dev

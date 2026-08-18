@@ -299,6 +299,19 @@ if command -v fzf >/dev/null 2>&1 && [[ ! -d "$HOME/.fzf" ]]; then
     log_info "fzf found via apt but ~/.fzf missing — running git install for oh-my-zsh plugin..."
     install_fzf
 fi
+
+# Remove apt's kitty even when the pinned one is already installed.
+#
+# The loop above only calls install_kitty() when kitty is missing or outdated,
+# and the purge used to live inside it. So on a machine that already had 0.47.4,
+# an apt kitty sitting alongside it was never removed — and since
+# /usr/share/applications/kitty.desktop launches `Exec=kitty` against the
+# session PATH (which often lacks ~/.local/bin), the panel and app menu kept
+# starting the buggy 0.21.2. That is the herdr double-keypress coming back on
+# every new setup despite the pinned install "succeeding".
+if [[ $MINIMAL -eq 0 ]] && command -v dpkg >/dev/null 2>&1; then
+    purge_apt_kitty || true
+fi
 echo ""
 
 # ============================================================================
@@ -562,7 +575,21 @@ if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
         fi
         log_info "Set default shell preference: bash (run 'shell-toggle' to switch to zsh)"
     else
-        log_success "shell preference already set: $(cat "$HOME/.config/shell/preferred" 2>/dev/null)"
+        _existing_pref="$(cat "$HOME/.config/shell/preferred" 2>/dev/null)"
+        if [[ "$_existing_pref" == "bash" ]]; then
+            log_success "shell preference already set: bash"
+        else
+            # Deliberately NOT overwritten: this file is a user choice, and
+            # silently flipping it would be worse than leaving it. But it is
+            # also the single thing that makes every new bash session bounce
+            # into zsh, so reporting it as a plain success (which is what used
+            # to happen) hides the cause of "I can't use bash".
+            log_warning "shell preference is '${_existing_pref:-empty}', not bash"
+            log_info "  Every interactive bash session will exec into ${_existing_pref:-?}."
+            log_info "  To make bash primary:  shell-toggle"
+            log_info "  Or directly:           echo bash > ~/.config/shell/preferred"
+            log_info "  For a one-off session without changing it: tobash"
+        fi
     fi
 
     # ble.sh — bash's answer to zsh-autosuggestions + zsh-syntax-highlighting.
@@ -802,7 +829,11 @@ else _vfail "Shell preference" "unset (will use login shell)"; fi
 # We only warn. chsh needs the user's password, so it cannot run unattended,
 # and this profile is deliberately sudo-free so it stays usable on locked-down
 # work machines.
-login_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+# $USER is only exported by login shells, so it is unset in a container exec,
+# a systemd unit, or `sudo` without -i — which is fatal under `set -u`. Derive
+# it instead. (This is exactly how the Docker terminal suite caught this.)
+_user_name="${USER:-$(id -un)}"
+login_shell="$(getent passwd "$_user_name" 2>/dev/null | cut -d: -f7)"
 pref_shell="$(cat "$pref_file" 2>/dev/null)"
 if [[ -n "$pref_shell" && -n "$login_shell" ]]; then
     if [[ "$(basename "$login_shell")" == "$pref_shell" ]]; then
@@ -811,7 +842,7 @@ if [[ -n "$pref_shell" && -n "$login_shell" ]]; then
         _vfail "Login shell" "$login_shell but preference is $pref_shell"
         log_info "  Interactive shells will still redirect to $pref_shell."
         log_info "  To align non-interactive contexts too:"
-        log_info "    sudo chsh -s \$(command -v $pref_shell) $USER"
+        log_info "    sudo chsh -s \$(command -v $pref_shell) $_user_name"
         log_info "  (note the username — 'sudo chsh -s ...' without it changes root's shell)"
     fi
 fi

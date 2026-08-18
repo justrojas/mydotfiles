@@ -193,27 +193,45 @@ install_kitty() {
     done
     update-desktop-database "$app_dst" 2>/dev/null || true
 
-    # Purge the apt-provided kitty (0.21.2 on Ubuntu 22.04). Its Kitty
-    # keyboard-protocol bug double-fires Backspace/Enter/Tab inside herdr, and it
-    # keeps reappearing on fresh workstations because the panel/app-menu (or a
-    # login shell whose PATH lacks ~/.local/bin) can still launch /usr/bin/kitty
-    # before the ~/.local override wins. Removing the package is the only way to
-    # guarantee the buggy binary can never be launched. The xterm-kitty terminfo
-    # entry is handled separately by install_kitty_terminfo() below, which no
-    # longer depends on the apt kitty-terminfo package surviving this purge.
-    if [[ $DRY_RUN -eq 0 ]]; then
-        if dpkg -l kitty 2>/dev/null | grep -q '^ii'; then
-            log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
-            sudo apt-get purge -y kitty 2>/dev/null \
-                || log_warning "Could not purge apt kitty — remove /usr/bin/kitty manually"
-        fi
-    else
-        log_info "[DRY RUN] Would purge apt-provided kitty if installed"
-    fi
+    purge_apt_kitty
 
     _confirm_install kitty "kitty ${PINNED_KITTY_VERSION}" || return 1
 
     install_kitty_terminfo
+}
+
+# Remove the apt-provided kitty (0.21.2 on Ubuntu 22.04).
+#
+# Its Kitty-keyboard-protocol bug double-fires Backspace/Enter/Tab inside herdr.
+# Removing the package is the only way to guarantee the buggy binary can never
+# be launched, because /usr/share/applications/kitty.desktop runs `Exec=kitty`
+# and resolves it against the *session* PATH — which frequently lacks
+# ~/.local/bin, so the panel and app-menu launch /usr/bin/kitty even when the
+# shell resolves kitty to the pinned 0.47.4.
+#
+# This is a separate function, and is called independently of install_kitty(),
+# because install_kitty() only runs when kitty is missing or outdated. On a
+# machine that already had the pinned version, the purge never ran — so an apt
+# kitty reinstalled by some later step (kde-setup used to list it) stayed
+# forever, and the double-keypress came back on every setup.
+#
+# The xterm-kitty terminfo entry is handled by install_kitty_terminfo(), which
+# does not depend on the apt kitty-terminfo package surviving this.
+purge_apt_kitty() {
+    if [[ ${DRY_RUN:-0} -eq 1 ]]; then
+        log_info "[DRY RUN] Would purge apt-provided kitty if installed"
+        return 0
+    fi
+
+    dpkg -l kitty 2>/dev/null | grep -q '^ii' || return 0
+
+    log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
+    if sudo apt-get purge -y kitty 2>/dev/null; then
+        log_success "Removed apt kitty"
+    else
+        log_warning "Could not purge apt kitty — remove /usr/bin/kitty manually"
+        return 1
+    fi
 }
 
 # Install the xterm-kitty terminfo entry into ~/.terminfo.

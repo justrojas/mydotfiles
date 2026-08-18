@@ -40,7 +40,17 @@ preferred="$(cat "$pref_file" 2>/dev/null || echo '')"
 
 echo "Decision sources:"
 if [[ -n "$preferred" ]]; then
-    ok "preferred" "$preferred   ($pref_file)"
+    if [[ "$preferred" == "bash" ]]; then
+        ok "preferred" "$preferred   ($pref_file)"
+    else
+        # This is the usual cause of "the switcher forces me into zsh": every
+        # interactive bash session execs into the preferred shell, so bash
+        # appears impossible to use even though it is installed and configured.
+        warn "preferred" "$preferred   — interactive bash will exec into $preferred"
+        info "" "make bash primary:  echo bash > $pref_file"
+        info "" "one-off, unchanged: tobash"
+        problems=$((problems + 1))
+    fi
 else
     bad "preferred" "unset — interactive shells will NOT be redirected"
     problems=$((problems + 1))
@@ -84,6 +94,34 @@ if [[ -r "$kitty_dir/kitty.conf" ]]; then
     fi
 else
     warn "kitty.conf" "not readable at $kitty_dir/kitty.conf"
+fi
+
+# kitty version + which binary a GUI launcher would actually start.
+#
+# apt ships 0.21.2 on Ubuntu 22.04, whose Kitty-keyboard-protocol bug
+# double-fires Enter/Tab/Backspace inside herdr. The shell may resolve kitty to
+# the pinned build in ~/.local/bin while the desktop entry still launches
+# /usr/bin/kitty, because Exec=kitty is resolved against the session PATH — so
+# checking `kitty --version` alone is not enough.
+if dpkg -l kitty 2>/dev/null | grep -q '^ii'; then
+    bad "apt kitty" "INSTALLED — /usr/bin/kitty is the buggy 0.21.2"
+    warn "" "the app menu can launch it even when your shell finds the newer one"
+    warn "" "fix: sudo apt-get purge -y kitty"
+    problems=$((problems + 1))
+else
+    ok "apt kitty" "not installed"
+fi
+
+if command -v kitty >/dev/null 2>&1; then
+    kver="$(kitty --version 2>/dev/null | awk '{print $2}')"
+    kpath="$(command -v kitty)"
+    # 0.33.0 is the first release without the double-keypress bug.
+    if [[ -n "$kver" ]] && printf '%s\n0.33.0\n' "$kver" | sort -V | head -1 | grep -qx "0.33.0"; then
+        ok "kitty on PATH" "$kver  ($kpath)"
+    else
+        bad "kitty on PATH" "$kver  ($kpath) — older than 0.33.0, doubles keypresses in herdr"
+        problems=$((problems + 1))
+    fi
 fi
 
 # --- 3. herdr ---------------------------------------------------------------
