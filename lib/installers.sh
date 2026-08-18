@@ -797,3 +797,41 @@ install_tools() {
         fi
     done
 }
+
+# Install a monospaced font that covers the braille block (U+2800-U+28FF).
+#
+# The cat art in assets/cats/ is drawn entirely in braille, which is a good
+# choice because every character in that block is single-width. But coverage is
+# not guaranteed: JetBrainsMono Nerd Font does not include the block at all,
+# and on a default Ubuntu install NO monospaced font does —
+# `fc-list ':charset=28FF:spacing=100'` returns nothing. fontconfig then falls
+# back to DejaVu Sans, which is proportional, and the art skews.
+#
+# fonts-dejavu-core supplies DejaVu Sans Mono; config/kitty/kitty.conf maps the
+# block to it explicitly with symbol_map.
+install_braille_font() {
+    # Already covered by some monospaced font? Nothing to do.
+    if fc-list ':charset=28FF:spacing=100' 2>/dev/null | grep -q .; then
+        log_success "Braille glyphs already available in a monospaced font"
+        return 0
+    fi
+
+    if [[ ${DRY_RUN:-0} -eq 1 ]]; then
+        log_info "[DRY RUN] Would install fonts-dejavu-core for braille coverage"
+        return 0
+    fi
+
+    log_info "Installing fonts-dejavu-core (monospaced braille for the cat art)..."
+    apt_update_once
+    if sudo apt-get install -y fonts-dejavu-core >/dev/null 2>&1; then
+        fc-cache -f >/dev/null 2>&1 || true
+        if fc-list ':charset=28FF:spacing=100' 2>/dev/null | grep -q .; then
+            log_success "Braille coverage installed"
+        else
+            log_warning "fonts-dejavu-core installed but braille still unmapped"
+        fi
+    else
+        # Non-fatal: the UI drops to the ASCII cats, which need no font at all.
+        log_warning "Could not install fonts-dejavu-core — cat art will use the ASCII tier"
+    fi
+}

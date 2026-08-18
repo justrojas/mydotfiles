@@ -9,6 +9,8 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
+# shellcheck source=lib/ui.sh
+source "$DOTFILES_DIR/lib/ui.sh"
 
 init_common "$@"
 
@@ -22,12 +24,18 @@ OS=$(detect_os)
 # ============================================================================
 clear
 echo ""
-echo "======================================"
-echo "   Dotfiles Installation"
-echo "======================================"
+# The greeter. cat_art picks braille / ASCII / nothing depending on what the
+# terminal can actually render — see lib/ui.sh. On a fresh box, before any
+# fonts exist, this is the ASCII cat.
+cat_art peek
+echo ""
+echo "   dotfiles installation"
 echo ""
 log_info "OS detected: $OS"
-[[ $DRY_RUN -eq 1 ]] && log_warning "Dry-run mode — no changes will be made"
+if [[ $DRY_RUN -eq 1 ]]; then
+    cat_art loaf
+    log_warning "Dry-run mode — no changes will be made"
+fi
 echo ""
 echo "Select a profile:"
 echo ""
@@ -44,7 +52,7 @@ echo "     Shell + neovim + tmux + CLI tools. No GUI, no kitty, no fonts."
 echo "     Requires sudo"
 echo ""
 echo "  4) Top Bar only  (Ubuntu/Debian, X11)"
-echo "     Waybar-style polybar with Spotify/MPRIS controls"
+echo "     Purple floating polybar: desktops, media, wifi dropdown"
 echo "     Requires sudo"
 echo ""
 echo "  5) Quit"

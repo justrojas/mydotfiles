@@ -17,6 +17,8 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
+# shellcheck source=../lib/ui.sh
+source "$DOTFILES_DIR/lib/ui.sh"
 # Pinned tool installers, shared with profiles/install-packages.sh.
 # MUST come after common.sh — it depends on log_*, run_or_dry, ensure_dir.
 # shellcheck source=../lib/installers.sh
@@ -197,6 +199,13 @@ if [[ -d "$fonts_src" ]]; then
     fi
 else
     log_warning "assets/fonts not found — skipping font install"
+fi
+
+# Braille coverage for the cat art. Separate from the Nerd Font install above
+# because JetBrainsMono does not carry the braille block at all, and neither
+# does any monospaced font on a stock Ubuntu — see install_braille_font().
+if command -v fc-list >/dev/null 2>&1; then
+    install_braille_font || true
 fi
 fi  # end --minimal font guard
 
@@ -573,26 +582,9 @@ if [[ -f "$DOTFILES_DIR/config/shell/env.sh" ]]; then
     source "$DOTFILES_DIR/config/shell/env.sh"
 fi
 
-VERIFY_PASS=0
-VERIFY_FAIL=0
-
-_vok()  { printf "  ${GREEN}✓${NC}  %-38s ${GREEN}%s${NC}\n"  "$1" "${2:-ok}"; (( VERIFY_PASS++ )) || true; }
-_vfail(){ printf "  ${RED}✗${NC}  %-38s ${RED}%s${NC}\n"    "$1" "${2:-MISSING}"; (( VERIFY_FAIL++ )) || true; }
-
-verify_symlink() {
-    local label="$1" path="$2"
-    if [[ -L "$path" && -e "$path" ]]; then _vok  "$label"
-    elif [[ -L "$path" ]];                  then _vfail "$label" "broken symlink → $(readlink "$path")"
-    else                                         _vfail "$label"
-    fi
-}
-
-verify_cmd() {
-    local label="$1" cmd="$2"
-    if command -v "$cmd" >/dev/null 2>&1; then _vok "$label" "$(command -v "$cmd")"
-    else                                        _vfail "$label"
-    fi
-}
+# verify_ok / verify_fail / verify_cmd / verify_symlink / verify_summary all
+# come from lib/ui.sh, so bar-setup and kde-setup format their results the same
+# way. They used to be defined here, and again (differently) in bar-setup.
 
 echo ""
 echo "  Symlinks"
@@ -623,15 +615,15 @@ verify_cmd "rg"           rg
 echo ""
 echo "  Shell environment"
 # Oh My Zsh
-if [[ -d "$HOME/.oh-my-zsh" ]]; then _vok  "Oh My Zsh installed"
-else                                  _vfail "Oh My Zsh installed"
+if [[ -d "$HOME/.oh-my-zsh" ]]; then verify_ok  "Oh My Zsh installed"
+else                                  verify_fail "Oh My Zsh installed"
 fi
 
 # Preferred shell (this, not the login shell, decides where you land —
 # see config/shell/switch.sh).
 pref_file="$HOME/.config/shell/preferred"
-if [[ -r "$pref_file" ]]; then _vok "Shell preference" "$(cat "$pref_file")"
-else _vfail "Shell preference" "unset (will use login shell)"; fi
+if [[ -r "$pref_file" ]]; then verify_ok "Shell preference" "$(cat "$pref_file")"
+else verify_fail "Shell preference" "unset (will use login shell)"; fi
 
 # Login shell vs preference.
 #
@@ -657,9 +649,9 @@ login_shell="$(getent passwd "$_user_name" 2>/dev/null | cut -d: -f7)"
 pref_shell="$(cat "$pref_file" 2>/dev/null)"
 if [[ -n "$pref_shell" && -n "$login_shell" ]]; then
     if [[ "$(basename "$login_shell")" == "$pref_shell" ]]; then
-        _vok "Login shell matches preference" "$login_shell"
+        verify_ok "Login shell matches preference" "$login_shell"
     else
-        _vfail "Login shell" "$login_shell but preference is $pref_shell"
+        verify_fail "Login shell" "$login_shell but preference is $pref_shell"
         log_info "  Interactive shells will still redirect to $pref_shell."
         log_info "  To align non-interactive contexts too:"
         log_info "    sudo chsh -s \$(command -v $pref_shell) $_user_name"
@@ -670,31 +662,26 @@ fi
 # terminfo: the entry kitty advertises must actually resolve, or full-screen
 # TUIs (herdr especially) mis-parse key sequences and double up keystrokes.
 if [[ $MINIMAL -eq 0 ]]; then
-    if infocmp xterm-kitty >/dev/null 2>&1; then _vok "xterm-kitty terminfo"
-    else _vfail "xterm-kitty terminfo" "missing — herdr may double keypresses"; fi
+    if infocmp xterm-kitty >/dev/null 2>&1; then verify_ok "xterm-kitty terminfo"
+    else verify_fail "xterm-kitty terminfo" "missing — herdr may double keypresses"; fi
 fi
 
 # omp theme
 omp_current="$HOME/.config/oh-my-posh/current.omp.json"
 if [[ -L "$omp_current" && -e "$omp_current" ]]; then
-    _vok "omp current theme" "$(basename "$(readlink "$omp_current")" .omp.json)"
+    verify_ok "omp current theme" "$(basename "$(readlink "$omp_current")" .omp.json)"
 elif [[ -L "$omp_current" ]]; then
-    _vfail "omp current theme" "broken → $(readlink "$omp_current")"
+    verify_fail "omp current theme" "broken → $(readlink "$omp_current")"
 else
-    _vfail "omp current theme"
+    verify_fail "omp current theme"
 fi
 
 # NvChad
-if [[ -d "$HOME/.config/nvim" ]]; then _vok "NvChad config present"
-else                                    _vfail "NvChad config present"
+if [[ -d "$HOME/.config/nvim" ]]; then verify_ok "NvChad config present"
+else                                    verify_fail "NvChad config present"
 fi
 
-echo ""
-if [[ $VERIFY_FAIL -eq 0 ]]; then
-    log_success "All checks passed ($VERIFY_PASS/$((VERIFY_PASS + VERIFY_FAIL)))"
-else
-    log_warning "$VERIFY_FAIL check(s) failed — see above"
-fi
+verify_summary "checks" || true
 
 # ============================================================================
 # Summary

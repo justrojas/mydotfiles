@@ -27,6 +27,8 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
+# shellcheck source=../lib/ui.sh
+source "$DOTFILES_DIR/lib/ui.sh"
 
 NONINTERACTIVE=0
 UPDATE_MODE=0
