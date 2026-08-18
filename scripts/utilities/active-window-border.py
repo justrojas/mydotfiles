@@ -103,6 +103,12 @@ class BorderWindow(Gtk.Window):
         self.set_focus_on_map(False)
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
 
+        # Show on every virtual desktop. Without this the border window is
+        # bound to whichever desktop it was first mapped on, so switching
+        # desktops leaves it behind — the ring appears to break or vanish
+        # while the focused window on the new desktop gets nothing.
+        self.stick()
+
         self.connect("draw", self.on_draw)
         self.connect("realize", self.on_realize)
 
@@ -144,19 +150,40 @@ class BorderWindow(Gtk.Window):
         return False
 
 
+_class_cache = {}
+
+
 def window_class(gdk_window):
-    """Best-effort WM_CLASS for a foreign GdkWindow."""
+    """Best-effort WM_CLASS for a foreign GdkWindow.
+
+    Cached per-XID: this is called on every poll tick, and spawning xprop 25
+    times a second is a pointless amount of process churn for a value that
+    never changes over a window's lifetime.
+    """
     try:
         xid = gdk_window.get_xid()
+    except Exception:
+        return ""
+
+    if xid in _class_cache:
+        return _class_cache[xid]
+
+    try:
         out = subprocess.run(
             ["xprop", "-id", str(xid), "WM_CLASS"],
             capture_output=True,
             text=True,
             timeout=1,
         ).stdout
-        return out.split("=", 1)[1].strip().lower() if "=" in out else ""
+        cls = out.split("=", 1)[1].strip().lower() if "=" in out else ""
     except Exception:
-        return ""
+        cls = ""
+
+    # Keep the cache from growing without bound over a long session.
+    if len(_class_cache) > 512:
+        _class_cache.clear()
+    _class_cache[xid] = cls
+    return cls
 
 
 def main():
@@ -181,24 +208,49 @@ def main():
 
     state = {"visible": False}
 
+    def conceal():
+        if state["visible"]:
+            border.hide()
+            state["visible"] = False
+
     def tick():
         active = screen.get_active_window()
         if active is None:
-            if state["visible"]:
-                border.hide()
-                state["visible"] = False
+            conceal()
+            return True
+
+        # Switching to a virtual desktop with no windows does NOT clear
+        # _NET_ACTIVE_WINDOW — it keeps pointing at the window that was focused
+        # on the previous desktop, which is now unmapped. Without this check we
+        # keep drawing the ring at that window's stale geometry, which is what
+        # produced both the "ghost" border on empty desktops and the ring
+        # appearing at the wrong position after a switch.
+        #
+        # A window on another desktop is unmapped, so is_viewable() is the
+        # cheap, native test for "actually on screen right now".
+        try:
+            if not active.is_viewable():
+                conceal()
+                return True
+        except Exception:
+            conceal()
             return True
 
         cls = window_class(active)
         if any(skip in cls for skip in SKIP_CLASSES):
-            if state["visible"]:
-                border.hide()
-                state["visible"] = False
+            conceal()
             return True
 
         # Frame extents include the decoration, so the border hugs the window
         # as the user sees it rather than the client area.
         rect = active.get_frame_extents()
+
+        # A destroyed or not-yet-mapped window reports a degenerate frame.
+        # Drawing that leaves a stray sliver on screen.
+        if rect.width <= 1 or rect.height <= 1:
+            conceal()
+            return True
+
         bw = opts.width
         g = opts.gap
 
@@ -233,6 +285,9 @@ def main():
         if not state["visible"]:
             border.show_all()
             border.set_keep_above(True)
+            # Re-assert stickiness after every map: some window managers reset
+            # the desktop assignment when a window is unmapped and remapped.
+            border.stick()
             state["visible"] = True
         return True
 

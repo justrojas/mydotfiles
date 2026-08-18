@@ -1,45 +1,206 @@
 #!/usr/bin/env bash
-# Network switcher for the polybar wifi module.
+# Network menu for the polybar wifi module.
 #
 # Removing the Plasma panel also removed the systray network applet, leaving no
-# way to change wifi from the bar. This restores that with whatever the machine
-# actually has, in order of preference.
+# way to change wifi from the bar. plasma-nm has no standalone window — it is a
+# systray applet only — so "just launch the KDE one" is not an option once the
+# tray is gone.
 #
-# plasma-nm has no standalone window — it is a systray applet only — so
-# "just launch the KDE one" is not an option once the tray is gone. The
-# fallbacks below are ordered from best UX to lowest common denominator.
+# Preference order:
+#   1. rofi   — a real dropdown anchored under the bar, connect in two clicks
+#   2. kdialog— native KDE, but a centred dialog rather than a dropdown
+#   3. nm-connection-editor / kcmshell5 / nmtui — full settings windows
+#
+# Install rofi for the dropdown:  sudo apt install rofi
 
 set -uo pipefail
 
 launch() { setsid "$@" >/dev/null 2>&1 & }
 
-# 1. nm-connection-editor — full GUI, part of network-manager-gnome. Best
-#    experience: shows saved connections, lets you add/edit/delete.
-if command -v nm-connection-editor >/dev/null 2>&1; then
-    launch nm-connection-editor
-    exit 0
-fi
+# Bar geometry, so the dropdown lands under the wifi icon rather than in the
+# middle of the screen. Keep in sync with config.ini's height + offset-y.
+BAR_HEIGHT="${WIFI_MENU_YOFFSET:-46}"
+X_OFFSET="${WIFI_MENU_XOFFSET:--24}"
 
-# 2. plasma-nm's KCM, if the standalone module is installed.
-if command -v kcmshell5 >/dev/null 2>&1 && kcmshell5 --list 2>/dev/null | grep -q kcm_networkmanagement; then
-    launch kcmshell5 kcm_networkmanagement
-    exit 0
-fi
+# ---------------------------------------------------------------------------
+# Fallback: full settings windows, for when no menu tool is available.
+# ---------------------------------------------------------------------------
+open_settings() {
+    if command -v nm-connection-editor >/dev/null 2>&1; then
+        launch nm-connection-editor
+    elif command -v kcmshell5 >/dev/null 2>&1 &&
+         kcmshell5 --list 2>/dev/null | grep -q kcm_networkmanagement; then
+        launch kcmshell5 kcm_networkmanagement
+    elif command -v nmtui >/dev/null 2>&1; then
+        for term in kitty konsole alacritty x-terminal-emulator xterm; do
+            if command -v "$term" >/dev/null 2>&1; then
+                launch "$term" -e nmtui
+                return 0
+            fi
+        done
+        return 1
+    else
+        return 1
+    fi
+}
 
-# 3. A terminal TUI. nmtui ships with NetworkManager itself, so on a machine
-#    using NM it is essentially always present.
-if command -v nmtui >/dev/null 2>&1; then
-    for term in kitty konsole alacritty x-terminal-emulator xterm; do
-        if command -v "$term" >/dev/null 2>&1; then
-            launch "$term" -e nmtui
-            exit 0
+notify() {
+    command -v notify-send >/dev/null 2>&1 && notify-send "Network" "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Connect, prompting for a password only if NetworkManager asks for one.
+#
+# `nmcli device wifi connect` reuses a saved profile when one exists, so the
+# common case is passwordless. We only prompt after a failure that mentions a
+# secret, rather than always asking and annoying the user on known networks.
+# ---------------------------------------------------------------------------
+connect_ssid() {
+    local ssid="$1" out
+    out=$(nmcli device wifi connect "$ssid" 2>&1)
+    if [[ $? -eq 0 ]]; then
+        notify "Connected to $ssid"
+        return 0
+    fi
+
+    if grep -qi "secrets\|password\|authentication" <<<"$out"; then
+        local pass
+        pass=$(ask_password "$ssid") || return 1
+        [[ -z "$pass" ]] && return 1
+        if out=$(nmcli device wifi connect "$ssid" password "$pass" 2>&1); then
+            notify "Connected to $ssid"
+            return 0
         fi
-    done
+    fi
+
+    notify "Could not connect to $ssid: $out"
+    return 1
+}
+
+ask_password() {
+    if command -v rofi >/dev/null 2>&1; then
+        rofi -dmenu -password -p "Password for $1" -lines 0
+    elif command -v kdialog >/dev/null 2>&1; then
+        kdialog --password "Password for $1"
+    else
+        return 1
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Build the network list.
+#
+# nmcli -t escapes literal colons in field values as '\:', so split on
+# unescaped colons only, then unescape. SSIDs genuinely do contain colons.
+# ---------------------------------------------------------------------------
+wifi_list() {
+    nmcli -t -f IN-USE,SIGNAL,SSID device wifi list 2>/dev/null |
+        while IFS= read -r line; do
+            local inuse signal ssid
+            inuse="${line%%:*}";  line="${line#*:}"
+            signal="${line%%:*}"; ssid="${line#*:}"
+            ssid="${ssid//\\:/:}"
+            [[ -z "$ssid" ]] && continue          # hidden network
+            printf '%s\t%s\t%s\n' "$inuse" "$signal" "$ssid"
+        done
+}
+
+# Signal strength as a compact bar glyph. Built with $'\uXXXX' escapes:
+# writing these Nerd Font private-use characters literally into a file gets
+# them silently stripped somewhere in the toolchain.
+bars() {
+    local s="${1:-0}"
+    if   (( s >= 75 )); then printf '%s' $'\u2582\u2584\u2586\u2588'
+    elif (( s >= 50 )); then printf '%s' $'\u2582\u2584\u2586'
+    elif (( s >= 25 )); then printf '%s' $'\u2582\u2584'
+    else                     printf '%s' $'\u2582'
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# rofi dropdown
+# ---------------------------------------------------------------------------
+rofi_menu() {
+    local radio entries="" line inuse signal ssid marker
+    radio=$(nmcli -t -f WIFI general status 2>/dev/null | head -1)
+
+    while IFS=$'\t' read -r inuse signal ssid; do
+        [[ -z "$ssid" ]] && continue
+        # '*' marks the currently connected network in nmcli's IN-USE column.
+        marker="  "
+        [[ "$inuse" == "*" ]] && marker=$'\u2713 '
+        entries+="${marker}${ssid}  $(bars "$signal")"$'\n'
+    done < <(wifi_list)
+
+    if [[ "$radio" == "enabled" ]]; then
+        entries+=$'\u2014 turn wifi off\n'
+    else
+        entries="$(printf '%s' $'\u2014 turn wifi on')"$'\n'
+    fi
+    entries+=$'\u2014 rescan\n'
+    entries+=$'\u2014 network settings'
+
+    local choice
+    choice=$(printf '%s' "$entries" | rofi -dmenu -i \
+        -p "wifi" \
+        -location 3 \
+        -xoffset "$X_OFFSET" \
+        -yoffset "$BAR_HEIGHT" \
+        -width 26 \
+        -lines 12) || return 0
+
+    [[ -z "$choice" ]] && return 0
+
+    case "$choice" in
+        *"turn wifi off")   nmcli radio wifi off ;;
+        *"turn wifi on")    nmcli radio wifi on ;;
+        *"rescan")          nmcli device wifi rescan 2>/dev/null; exec "$0" ;;
+        *"network settings") open_settings ;;
+        *)
+            # Strip the leading marker and the trailing signal bars to recover
+            # the SSID exactly as nmcli reported it.
+            local ssid_sel="${choice#??}"
+            ssid_sel="${ssid_sel%%  *}"
+            connect_ssid "$ssid_sel"
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# kdialog fallback — a dialog, not a dropdown, but needs nothing installed.
+# ---------------------------------------------------------------------------
+kdialog_menu() {
+    local args=() inuse signal ssid i=0
+    while IFS=$'\t' read -r inuse signal ssid; do
+        [[ -z "$ssid" ]] && continue
+        local label="$ssid  $(bars "$signal")"
+        [[ "$inuse" == "*" ]] && label="$label  (connected)"
+        args+=("$i" "$label")
+        eval "SSID_$i=\$ssid"
+        ((i++))
+    done < <(wifi_list)
+
+    args+=("settings" "Network settings…")
+
+    local choice
+    choice=$(kdialog --menu "Wi-Fi" "${args[@]}" 2>/dev/null) || return 0
+    [[ -z "$choice" ]] && return 0
+    [[ "$choice" == "settings" ]] && { open_settings; return 0; }
+
+    local var="SSID_$choice"
+    connect_ssid "${!var}"
+}
+
+# ---------------------------------------------------------------------------
+if ! command -v nmcli >/dev/null 2>&1; then
+    open_settings || notify "No network UI found. Install network-manager-gnome or use nmtui."
+    exit 0
 fi
 
-# 4. Nothing suitable — say so visibly rather than failing silently, since this
-#    is triggered by a click and a silent no-op looks like a broken bar.
-if command -v notify-send >/dev/null 2>&1; then
-    notify-send "Network" "No network UI found.\nInstall network-manager-gnome for nm-connection-editor,\nor use 'nmtui' in a terminal."
+if command -v rofi >/dev/null 2>&1; then
+    rofi_menu
+elif command -v kdialog >/dev/null 2>&1; then
+    kdialog_menu
+else
+    open_settings || notify "Install rofi for the wifi dropdown: sudo apt install rofi"
 fi
-exit 1
