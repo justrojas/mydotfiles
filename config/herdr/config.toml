@@ -97,7 +97,10 @@ description = "open lazygit"
 # Theme
 # =============================================================================
 [theme]
-name = "gruvbox"
+name = "tokyo-night"
+# Don't follow the system light/dark preference — the terminal, bar and prompt
+# are all pinned to a dark palette, so auto-switching would desync them.
+auto_switch = false
 
 # =============================================================================
 # UI / sidebar

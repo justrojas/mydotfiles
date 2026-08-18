@@ -620,6 +620,21 @@ log_step "herdr configuration"
 
 if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
     ensure_dir "$HOME/.config/herdr"
+
+    # If herdr has already run once it will have written its own config.toml,
+    # seeding default_shell from whatever $SHELL was at the time. On a machine
+    # whose login shell is still zsh that bakes in "/bin/zsh", and every pane
+    # herdr opens is zsh no matter what ~/.config/shell/preferred says — the
+    # symlink below fixes it, but only if the file it replaces is noticed.
+    # Call it out explicitly, because safe_symlink backs up silently and the
+    # symptom (wrong shell in new panes) looks unrelated to this step.
+    if [[ -f "$HOME/.config/herdr/config.toml" && ! -L "$HOME/.config/herdr/config.toml" ]]; then
+        gen_shell="$(grep -oP 'default_shell\s*=\s*"\K[^"]+' "$HOME/.config/herdr/config.toml" 2>/dev/null || true)"
+        log_warning "Replacing herdr's own generated config (not from this repo)"
+        [[ -n "$gen_shell" ]] && log_info "  it set default_shell = $gen_shell"
+        log_info "  the original is backed up alongside it"
+    fi
+
     safe_symlink "$DOTFILES_DIR/config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
     log_success "herdr config linked"
 else
@@ -770,6 +785,36 @@ fi
 pref_file="$HOME/.config/shell/preferred"
 if [[ -r "$pref_file" ]]; then _vok "Shell preference" "$(cat "$pref_file")"
 else _vfail "Shell preference" "unset (will use login shell)"; fi
+
+# Login shell vs preference.
+#
+# The preference only redirects *interactive* shells, via the exec in
+# switch.sh. Anything non-interactive — scripts, cron, and tools that read
+# $SHELL to decide what to spawn — still gets the login shell from
+# /etc/passwd. When the two disagree, terminals look correct while everything
+# else quietly uses the other shell.
+#
+# This bites hardest with terminal multiplexers: herdr writes its own
+# config.toml on first run if none exists, seeding default_shell from the
+# environment. If that happens while the login shell is still zsh, every pane
+# it opens is zsh regardless of this preference.
+#
+# We only warn. chsh needs the user's password, so it cannot run unattended,
+# and this profile is deliberately sudo-free so it stays usable on locked-down
+# work machines.
+login_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+pref_shell="$(cat "$pref_file" 2>/dev/null)"
+if [[ -n "$pref_shell" && -n "$login_shell" ]]; then
+    if [[ "$(basename "$login_shell")" == "$pref_shell" ]]; then
+        _vok "Login shell matches preference" "$login_shell"
+    else
+        _vfail "Login shell" "$login_shell but preference is $pref_shell"
+        log_info "  Interactive shells will still redirect to $pref_shell."
+        log_info "  To align non-interactive contexts too:"
+        log_info "    sudo chsh -s \$(command -v $pref_shell) $USER"
+        log_info "  (note the username — 'sudo chsh -s ...' without it changes root's shell)"
+    fi
+fi
 
 # terminfo: the entry kitty advertises must actually resolve, or full-screen
 # TUIs (herdr especially) mis-parse key sequences and double up keystrokes.
