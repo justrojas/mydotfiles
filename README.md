@@ -14,6 +14,7 @@ Clone this repo, run one script, and have a fully configured shell on any machin
 | **tmux** | `config/tmux/tmux.conf` |
 | **kitty** | `config/kitty/kitty.conf` |
 | **polybar** (top bar) | `config/polybar/config.ini` |
+| **rofi** (wifi dropdown) | `config/rofi/config.rasi` |
 | **herdr** | `config/herdr/config.toml` |
 | **neovim** | NvChad (cloned on install) |
 | **KDE Plasma** | `config/kde/` |
@@ -45,7 +46,8 @@ The interactive menu offers four options:
 - Installs all packages via apt + third-party repos (eza, glow, zoxide, neovim)
 - Then runs Terminal Setup non-interactively
 - Optionally installs KDE Plasma customisations (Kvantum/Ant-Dark theme,
-  Touchegg gestures, Firefox userChrome, global shortcuts, focus ring)
+  Touchegg gestures, Firefox userChrome, global shortcuts, bismuth tiling
+  gaps, active-window focus ring)
 - Optionally installs the polybar top bar
 
 **3 — VM / Headless Setup** (Ubuntu/Debian, requires sudo)
@@ -56,8 +58,9 @@ The interactive menu offers four options:
 - Equivalent to `terminal-setup.sh --minimal` plus a trimmed apt package list
 
 **4 — Top Bar only** (Ubuntu/Debian, X11)
-- Installs polybar + playerctl and links `config/polybar/`
-- Offers to disable Latte Dock, since two bars would overlap
+- Installs polybar, playerctl and rofi, and links `config/polybar/` + `config/rofi/`
+- Detects Plasma panels on the top edge and offers to remove or auto-hide them,
+  since otherwise two bars fight over the same screen edge and strut
 
 Run a profile directly if you don't want the menu:
 
@@ -179,8 +182,8 @@ all agree, without needing `chsh`.
 
 ## Top bar
 
-A floating, Waybar-style polybar with per-module rounded pills and a Tokyo
-Night Storm palette.
+A floating, rounded polybar in a purple-tinted dark palette, sized to 38pt and
+detached from the screen edge.
 
 > **Why polybar, not waybar?** Waybar positions itself using the `wlr-layer-shell`
 > protocol, which is Wayland-only. This setup is KDE Plasma on **X11**, where
@@ -199,13 +202,50 @@ bar                          # launch (also autostarts on login)
 
 | Region | Modules |
 |---|---|
-| Left | launcher, KDE virtual desktops |
-| Center | Spotify: ◀ / track / ▶ |
-| Right | volume, memory, CPU, temperature, battery, network, clock, power |
+| Left | virtual desktops (as app icons), then media ◀ / ⏯ / ▶ |
+| Center | clock |
+| Right | volume, temperature, battery, wifi |
+
+The workspace module shows the **icons of the apps on each desktop** rather
+than numbers, so you can see what is where at a glance. The active desktop is
+marked with an underline rather than a filled block.
+
+Updates are event-driven: `workspaces.sh --watch` follows `xprop -spy` instead
+of polling, which took the refresh latency from 1000ms to roughly 2ms.
 
 `config/polybar/launch.sh` detects your network interface, battery and adapter
 names at runtime and spawns one bar per connected monitor, so the config file
 stays portable across machines.
+
+> **Editing `config.ini` — read this first.** The module icons are Nerd Font
+> private-use characters (U+E000–U+F8FF). They are silently stripped if written
+> literally by most tooling, leaving modules with blank labels and no error.
+> Patch the file with a script that carries the existing bytes across via regex
+> capture, rather than retyping the glyphs. `config/polybar/scripts/icons.sh`
+> builds its glyphs from `$'\uXXXX'` escapes for the same reason.
+
+### Wifi dropdown
+
+Removing the Plasma panel also removed the systray network applet, and
+plasma-nm has no standalone window — it is a systray applet only. So the wifi
+icon opens a rofi dropdown anchored under the bar: networks sorted by signal
+with the connected one pinned to the top, plus wifi on/off, rescan, and a link
+to full network settings.
+
+Selecting a network connects to it, prompting for a password only if
+NetworkManager actually asks for one — so saved networks connect in one click.
+Falls back to `kdialog` if rofi is missing, then to the full settings windows.
+
+The menu reads NetworkManager's **cache** (`--rescan no`). Letting nmcli decide
+to rescan blocks the menu for as long as the scan takes — measured at 3.6s here
+against 28ms warm, which presents as random slowness rather than a consistent
+delay. NetworkManager rescans on its own schedule, and the menu has an explicit
+rescan entry when that isn't enough.
+
+The dropdown is themed to match the bar in `config/rofi/config.rasi`. Note that
+polybar writes colours as `#AARRGGBB` and rofi as `#RRGGBBAA`, so the same
+colour is spelled `#cc1e1b2e` in one file and `#1e1b2ecc` in the other —
+swapping them yields a believable wrong colour rather than an error.
 
 ### Spotify / media controls
 
@@ -248,7 +288,14 @@ my-dotfiles/
 │   ├── polybar/
 │   │   ├── config.ini              # top bar: modules, colours, layout
 │   │   ├── launch.sh               # detects iface/battery/monitors, spawns bars
-│   │   └── scripts/spotify.sh      # MPRIS control via playerctl
+│   │   └── scripts/
+│   │       ├── workspaces.sh       # virtual desktops as app icons (xprop -spy)
+│   │       ├── taskbar.sh          # window list for the focused desktop
+│   │       ├── icons.sh            # shared WM_CLASS -> Nerd Font glyph table
+│   │       ├── spotify.sh          # MPRIS control via playerctl
+│   │       └── network-menu.sh     # rofi wifi dropdown
+│   ├── rofi/
+│   │   └── config.rasi             # dropdown theme, matched to the bar
 │   ├── herdr/config.toml
 │   ├── tmux/
 │   │   ├── tmux.conf               # symlinked to ~/.config/tmux
@@ -286,6 +333,8 @@ my-dotfiles/
 │   ├── test-terminal-setup.sh      # assertions for terminal-setup.sh
 │   ├── test-install-packages.sh    # assertions for install-packages.sh
 │   ├── test-vm-setup.sh            # assertions for vm-setup.sh
+│   ├── test-kde-setup.sh           # assertions for kde-setup.sh
+│   ├── test-rofi-theme.sh          # rofi theme parse check (runs on the host)
 │   └── run-docker-tests.sh         # test runner
 └── install.sh                      # interactive entry point
 ```
@@ -307,6 +356,26 @@ bash tests/run-docker-tests.sh --suite vm --ubuntu 2204
 # Keep the container after a failure to inspect it
 bash tests/run-docker-tests.sh --suite packages --keep
 ```
+
+`tests/test-rofi-theme.sh` runs on the **host** rather than in Docker, since it
+only needs rofi's parser:
+
+```bash
+bash tests/test-rofi-theme.sh
+```
+
+It exists because rofi fails a theme parse *silently* — it exits 0, prints
+nothing, and renders its stock theme. The only reliable signal from the command
+line is that `-dump-theme` emits zero bytes, so the test asserts on dump size
+rather than exit status. The specific regression it guards is that a
+`configuration {}` block is only legal at the top of `config.rasi`; placing it
+after a theme section fails with an error pointing at the closing brace of the
+*preceding* block.
+
+> Run these against the host with care: the Docker suites assert things like
+> "kitty is not installed", which are false on a real workstation. They are
+> written for a clean container and will report spurious failures if invoked
+> directly.
 
 On failure the output shows exactly which assertion failed:
 
