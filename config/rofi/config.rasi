@@ -1,0 +1,152 @@
+/* rofi theme — matched to the polybar top bar.
+ *
+ * Colours are taken from config/polybar/config.ini's [colors] section so the
+ * dropdown reads as part of the bar rather than a separate application.
+ *
+ * NOTE ON COLOUR FORMAT: polybar writes #AARRGGBB (alpha first), rofi writes
+ * #RRGGBBAA (alpha last). The same colour is spelled differently in the two
+ * files — polybar's #cc1e1b2e is rofi's #1e1b2ecc. Getting this backwards
+ * yields a plausible-looking but wrong colour rather than an error, so the two
+ * are cross-referenced here deliberately.
+ *
+ * Geometry matches the bar: 12px corner radius, and the window is positioned
+ * under the right-hand end of the bar by the -location/-yoffset flags in
+ * config/polybar/scripts/network-menu.sh.
+ */
+
+configuration {
+    /* This block MUST come before any theme section. rofi's parser accepts
+     * `configuration` only at the top of config.rasi; placing it after a theme
+     * block (even the `*` defaults) fails with a parse error pointing at the
+     * closing brace of the preceding block, which is misleading.
+     *
+     * The wifi menu supplies its own entries on stdin, so dmenu is the only
+     * mode in use. show-icons stays off: the entries already carry a tick and
+     * signal-strength glyphs, and icon lookup would add latency to a menu that
+     * needs to feel instant. */
+    show-icons:      false;
+    disable-history: true;
+    click-to-exit:   true;
+}
+
+* {
+    /* polybar #cc1e1b2e */
+    bg:          #1e1b2ecc;
+    /* opaque variant, for text drawn on top of the accent */
+    bg-solid:    #1e1b2eff;
+    foreground:  #c8c0ddff;
+    dim:         #6e6482ff;
+    accent:      #9d7cd8ff;
+    warn:        #f7768eff;
+    transparent: #00000000;
+
+    font: "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    transparency:     "real";
+    location:         north east;
+    anchor:           north east;
+    width:            340px;
+    border-radius:    12px;
+    border:           2px;
+    border-color:     @accent;
+    background-color: @bg;
+    padding:          6px;
+    children:         [ mainbox ];
+}
+
+mainbox {
+    background-color: @transparent;
+    children:         [ inputbar, listview ];
+    spacing:          6px;
+}
+
+inputbar {
+    background-color: @transparent;
+    text-color:       @foreground;
+    padding:          6px 8px;
+    children:         [ prompt, entry ];
+    spacing:          8px;
+}
+
+prompt {
+    background-color: @transparent;
+    text-color:       @accent;
+}
+
+entry {
+    background-color:      @transparent;
+    text-color:            @foreground;
+    placeholder:           "filter";
+    placeholder-color:     @dim;
+    cursor:                text;
+}
+
+listview {
+    background-color: @transparent;
+    lines:            12;
+    /* Shrink to the number of entries rather than always reserving 12 rows,
+     * so a short list doesn't leave a large empty panel hanging off the bar. */
+    dynamic:          true;
+    scrollbar:        false;
+    spacing:          2px;
+    cycle:            true;
+}
+
+element {
+    background-color: @transparent;
+    text-color:       @foreground;
+    padding:          7px 10px;
+    border-radius:    8px;
+    cursor:           pointer;
+}
+
+element normal normal,
+element alternate normal {
+    background-color: @transparent;
+    text-color:       @foreground;
+}
+
+/* The active/urgent slots are unused by the wifi menu, but rofi falls back to
+ * odd defaults if they are left undefined. */
+element normal active,
+element alternate active {
+    background-color: @transparent;
+    text-color:       @accent;
+}
+
+element normal urgent,
+element alternate urgent {
+    background-color: @transparent;
+    text-color:       @warn;
+}
+
+element selected normal,
+element selected active {
+    background-color: @accent;
+    /* Dark text on the accent fill — @foreground is far too low-contrast. */
+    text-color:       @bg-solid;
+}
+
+element selected urgent {
+    background-color: @warn;
+    text-color:       @bg-solid;
+}
+
+element-text {
+    background-color: @transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+}
+
+/* Shown by kdialog-style message boxes and by rofi's error output. */
+message {
+    background-color: @transparent;
+    padding:          6px 8px;
+}
+
+textbox {
+    background-color: @transparent;
+    text-color:       @foreground;
+}

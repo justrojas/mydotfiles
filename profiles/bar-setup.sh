@@ -104,6 +104,15 @@ else
     exit 1
 fi
 
+# The rofi theme backs the wifi dropdown in scripts/network-menu.sh. Its
+# colours mirror config.ini's [colors], so the menu reads as part of the bar.
+if [[ -d "$DOTFILES_DIR/config/rofi" ]]; then
+    safe_symlink "$DOTFILES_DIR/config/rofi" "$HOME/.config/rofi"
+    log_success "rofi theme linked"
+else
+    log_warning "config/rofi not found — wifi dropdown will use rofi's default theme"
+fi
+
 # ============================================================================
 log_step "Autostart + existing panels"
 

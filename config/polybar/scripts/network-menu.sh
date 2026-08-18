@@ -79,7 +79,11 @@ connect_ssid() {
 
 ask_password() {
     if command -v rofi >/dev/null 2>&1; then
-        rofi -dmenu -password -p "Password for $1" -lines 0
+        # Hide the list entirely: there is nothing to choose from, and an empty
+        # listview leaves a blank panel hanging under the prompt.
+        rofi -dmenu -password -p "Password for $1" \
+            -location 3 -xoffset "$X_OFFSET" -yoffset "$BAR_HEIGHT" \
+            -theme-str 'listview { enabled: false; }' </dev/null
     elif command -v kdialog >/dev/null 2>&1; then
         kdialog --password "Password for $1"
     else
@@ -171,13 +175,14 @@ rofi_menu() {
     entries+=$'\u2014 network settings'
 
     local choice
+    # Width and row count come from the theme (config/rofi/config.rasi); the
+    # deprecated -width/-lines flags would override it. Only the position is
+    # passed here, since it depends on the bar's geometry.
     choice=$(printf '%s' "$entries" | rofi -dmenu -i \
         -p "wifi" \
         -location 3 \
         -xoffset "$X_OFFSET" \
-        -yoffset "$BAR_HEIGHT" \
-        -width 26 \
-        -lines 12) || return 0
+        -yoffset "$BAR_HEIGHT") || return 0
 
     [[ -z "$choice" ]] && return 0
 
