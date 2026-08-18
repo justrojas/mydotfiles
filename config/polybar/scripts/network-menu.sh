@@ -92,6 +92,12 @@ ask_password() {
 #
 # nmcli -t escapes literal colons in field values as '\:', so split on
 # unescaped colons only, then unescape. SSIDs genuinely do contain colons.
+#
+# nmcli reports one row per access point, so a network with several APs (mesh,
+# or 2.4/5GHz on the same SSID) appears many times. Unfiltered, the network you
+# are actually connected to can end up dozens of rows down the menu. Collapse
+# to one row per SSID, keeping the connected AP if there is one and otherwise
+# the strongest, then sort by signal with the connected network pinned first.
 # ---------------------------------------------------------------------------
 wifi_list() {
     nmcli -t -f IN-USE,SIGNAL,SSID device wifi list 2>/dev/null |
@@ -102,7 +108,31 @@ wifi_list() {
             ssid="${ssid//\\:/:}"
             [[ -z "$ssid" ]] && continue          # hidden network
             printf '%s\t%s\t%s\n' "$inuse" "$signal" "$ssid"
-        done
+        done |
+        awk -F'\t' '
+            {
+                ssid = $3
+                connected = ($1 == "*") ? 1 : 0
+                sig = $2 + 0
+                # Keep this row if the SSID is new, if this AP is the connected
+                # one, or if it is stronger than what we have so far.
+                if (!(ssid in seen) || connected > conn[ssid] ||
+                    (connected == conn[ssid] && sig > best[ssid])) {
+                    seen[ssid] = 1
+                    conn[ssid] = connected
+                    best[ssid] = sig
+                    inuse[ssid] = $1
+                }
+            }
+            END {
+                for (s in seen)
+                    # Sort key: connected first, then descending signal.
+                    printf "%d\t%03d\t%s\t%s\t%s\n",
+                           1 - conn[s], 999 - best[s], inuse[s], best[s], s
+            }
+        ' |
+        sort -k1,1n -k2,2n |
+        cut -f3-
 }
 
 # Signal strength as a compact bar glyph. Built with $'\uXXXX' escapes:
