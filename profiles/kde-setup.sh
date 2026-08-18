@@ -47,9 +47,9 @@ UBUNTU_CODENAME="${UBUNTU_CODENAME:-jammy}"
 # --config-only skips setup_repositories, install_packages,
 # install_binary_packages and install_ant_dark_theme.
 if [[ $CONFIG_ONLY -eq 1 ]]; then
-    STEP_TOTAL=6
+    STEP_TOTAL=7
 else
-    STEP_TOTAL=10
+    STEP_TOTAL=11
 fi
 
 # ============================================================================
@@ -165,7 +165,12 @@ install_binary_packages() {
         apt_install touchegg || log_warning "Could not install touchegg"
     fi
 
-    # Rounded corners + focus-outline KWin effect.
+    # Rounded corners KWin effect.
+    #
+    # NOTE: this effect does NOT provide the focus outline. It loads and
+    # reports itself enabled but never draws — see setup_active_window_outline
+    # for the details and for what replaced it. It is still installed here
+    # because the rounded-corners half is what the Ant-Dark look expects.
     #
     # The filename encodes the distro it was built for (…_kubuntu2204.deb), so
     # glob rather than hardcode — otherwise adding a 24.04 build silently does
@@ -179,12 +184,13 @@ install_binary_packages() {
         log_info "Installing rounded corners effect ($(basename "$shapecorners_deb"))..."
         if ! run_or_dry sudo dpkg -i "$shapecorners_deb"; then
             log_warning "dpkg failed for $(basename "$shapecorners_deb")"
-            log_warning "It is built for a specific distro release — the focus"
-            log_warning "outline (setup_active_window_outline) will be skipped."
+            log_warning "It is built for a specific distro release — rounded"
+            log_warning "corners will be unavailable. The focus outline is"
+            log_warning "unaffected; it does not depend on this package."
         fi
     else
         log_warning "No kwin4_effect_shapecorners*.deb in scripts/packages/"
-        log_warning "Skipping rounded corners — focus outline will be unavailable"
+        log_warning "Skipping rounded corners (focus outline is unaffected)"
     fi
 }
 
@@ -447,6 +453,57 @@ setup_firefox_chrome() {
 # ACTIVE WINDOW OUTLINE
 # ============================================================================
 
+# Configure bismuth tiling gaps.
+#
+# install_packages() installs kwin-bismuth but Bismuth ships with zero gaps, so
+# windows tile edge-to-edge and share a single pixel boundary. Beyond looking
+# cramped, that leaves no room for the focus ring to sit outside a window
+# frame — which is why active-window-border defaults to inset mode.
+#
+# These live in kwinrc's [Script-bismuth] group. Note that a plain
+# `qdbus org.kde.KWin /KWin reconfigure` is NOT enough to make a KWin *script*
+# re-read its config: the script has to be toggled off and back on, which is
+# what this does.
+setup_bismuth_tiling() {
+    log_step "Configuring bismuth tiling gaps..."
+
+    if ! command -v kwriteconfig5 >/dev/null 2>&1; then
+        log_warning "kwriteconfig5 not found — skipping bismuth config"
+        return
+    fi
+
+    local gap="${BISMUTH_GAP:-8}"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log_info "[DRY RUN] Would set bismuth screen/tile gaps to ${gap}px"
+        return
+    fi
+
+    local key
+    for key in screenGapTop screenGapLeft screenGapRight screenGapBottom tileLayoutGap; do
+        kwriteconfig5 --file kwinrc --group Script-bismuth --key "$key" "$gap" \
+            || log_warning "Could not write $key"
+    done
+    log_success "Bismuth gaps set to ${gap}px"
+
+    # Toggle the script so it picks up the new gap values.
+    local qdbus_bin
+    qdbus_bin="$(command -v qdbus || command -v qdbus6 || command -v qdbus-qt5 || true)"
+    if [[ -z "$qdbus_bin" ]] || ! pgrep -x kwin_x11 >/dev/null 2>&1; then
+        log_info "KWin not running — gaps apply on next login"
+        return
+    fi
+
+    kwriteconfig5 --file kwinrc --group Plugins --key bismuthEnabled false
+    "$qdbus_bin" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    sleep 1
+    kwriteconfig5 --file kwinrc --group Plugins --key bismuthEnabled true
+    "$qdbus_bin" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    log_success "Bismuth reloaded"
+}
+
+# ============================================================================
+
 # Draw a coloured ring around the focused window.
 #
 # With bismuth tiling enabled and a dark Aurorae decoration, there is otherwise
@@ -454,31 +511,72 @@ setup_firefox_chrome() {
 # subtle titlebar shade, which vanishes entirely on tiled/maximised windows
 # where the titlebar is hidden.
 #
-# Implemented by the kwin4_effect_shapecorners effect installed above from
-# scripts/packages/. The real work lives in the standalone utility so it can be
-# re-run and re-tuned without a full kde-setup pass.
+# WHY A DAEMON AND NOT A KWIN EFFECT
+# ----------------------------------
+# This was previously implemented with kwin4_effect_shapecorners. That effect
+# loads, reports itself enabled, and logs "shaders loaded" — but never draws
+# anything, verified at 8px in bright red. The KDE-native alternatives fail for
+# their own reasons:
+#
+#   * Aurorae SVG themes (Ant-Dark, used here) paint from their own SVGs and
+#     ignore the KDE colour scheme, so WM/activeBackground has no effect.
+#   * Breeze borders DO honour the colour scheme, but only by giving up the
+#     Ant-Dark decoration entirely.
+#
+# So the ring is drawn by our own always-on-top, click-through GTK window that
+# tracks the focused window's frame — the approach jankyborders takes on macOS.
+# See scripts/utilities/active-window-border.py for the implementation notes.
 setup_active_window_outline() {
     log_step "Configuring active window outline..."
 
-    local script="$DOTFILES_DIR/scripts/utilities/kde-active-outline.sh"
+    local launcher="$DOTFILES_DIR/scripts/utilities/active-window-border.sh"
 
-    if [[ ! -f "$script" ]]; then
-        log_warning "kde-active-outline.sh not found, skipping..."
+    if [[ ! -f "$launcher" ]]; then
+        log_warning "active-window-border.sh not found, skipping..."
         return
     fi
 
-    if ! dpkg -l kwin4_effect_shapecorners 2>/dev/null | grep -q '^ii'; then
-        log_warning "kwin4_effect_shapecorners not installed — outline unavailable"
-        log_info "It ships in scripts/packages/ and is installed by install_binary_packages()"
-        return
+    # The daemon needs GTK3 + cairo introspection. Both ship with Plasma, but
+    # a minimal install can lack the Python bindings specifically.
+    if ! python3 -c "import gi, cairo" >/dev/null 2>&1; then
+        log_warning "python3-gi / python3-cairo missing — outline unavailable"
+        if [[ $DRY_RUN -eq 0 ]]; then
+            run_or_dry sudo apt-get install -y python3-gi python3-cairo gir1.2-gtk-3.0 \
+                || { log_warning "Could not install border daemon deps (non-fatal)"; return; }
+        else
+            log_info "[DRY RUN] Would install python3-gi python3-cairo gir1.2-gtk-3.0"
+            return
+        fi
     fi
 
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would run kde-active-outline.sh"
-        return
+    run_or_dry chmod +x "$DOTFILES_DIR/scripts/utilities/active-window-border.py" "$launcher"
+
+    # Autostart on login, same mechanism as the polybar entry.
+    local autostart_file="$HOME/.config/autostart/active-window-border.desktop"
+    if [[ $DRY_RUN -eq 0 ]]; then
+        ensure_dir "$HOME/.config/autostart"
+        cat > "$autostart_file" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Active Window Border
+Comment=Focus outline around the active window (managed by my-dotfiles)
+Exec=$launcher start
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2
+EOF
+        log_success "Autostart entry written to $autostart_file"
+    else
+        log_info "[DRY RUN] Would write $autostart_file"
     fi
 
-    bash "$script" || log_warning "Could not apply window outline (non-fatal)"
+    # Only start it if we're actually in an X11 session; on a headless or
+    # Wayland run the config is still linked but the daemon can't map a window.
+    if [[ $DRY_RUN -eq 0 && -n "${DISPLAY:-}" ]]; then
+        bash "$launcher" restart || log_warning "Could not start window border (non-fatal)"
+    else
+        log_info "Border daemon will start on next login"
+    fi
 }
 
 # ============================================================================
@@ -694,6 +792,7 @@ main() {
     setup_kvantum_config
     setup_firefox_chrome
     setup_kde_shortcuts
+    setup_bismuth_tiling
     setup_active_window_outline
     install_fonts
 
@@ -709,7 +808,7 @@ main() {
     log_info "  1. Restart your KDE session (logout and login)"
     log_info "  2. Apply the Ant-Dark theme in System Settings > Appearance"
     log_info "  3. For a top bar, run: bash profiles/bar-setup.sh (polybar)"
-    log_info "  4. Tune the focus ring: kde-active-outline.sh --color <hex> --thickness <px>"
+    log_info "  4. Tune the focus ring: AWB_COLOR=7aa2f7 AWB_WIDTH=4 scripts/utilities/active-window-border.sh restart"
     log_info ""
     log_info "Backup files are saved with timestamp: $BACKUP_TIMESTAMP"
 }

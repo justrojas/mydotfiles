@@ -276,7 +276,8 @@ my-dotfiles/
 │   ├── install.sh                  # redirects to root install.sh (legacy)
 │   └── utilities/
 │       ├── kt                      # kitty theme switcher
-│       └── kde-active-outline.sh   # focus ring for KDE/X11
+│       ├── active-window-border.py # focus ring daemon (X11)
+│       └── active-window-border.sh # start/stop/restart the focus ring
 ├── assets/
 │   └── fonts/                      # JetBrainsMono Nerd Font variants
 ├── tests/
@@ -323,7 +324,7 @@ All `scripts/utilities/*.sh` are symlinked into `~/.local/bin` by
 | Command | What it does |
 |---|---|
 | `kt` | kitty theme switcher (see above) |
-| `kde-active-outline.sh` | Draw a coloured ring around the focused window (KDE/X11) |
+| `active-window-border.sh` | Start/stop the focus ring around the active window (X11) |
 | `ssh_gen.sh` | Interactive SSH key generator, copies the pubkey to the clipboard |
 | `firefox_fix.sh <url>` | Open a URL in a new Firefox window, optionally fullscreen |
 | `claude_launcher.sh` | `firefox_fix.sh https://claude.ai/new` |
@@ -336,19 +337,55 @@ which window has focus — it differentiates only by a subtle titlebar shade,
 which disappears entirely on tiled or maximised windows where the titlebar is
 hidden.
 
-`kde-active-outline.sh` fixes that using the `kwin4_effect_shapecorners` effect
-(shipped in `scripts/packages/`, installed by `kde-setup.sh`):
+`active-window-border.sh` fixes that by running a small daemon that draws a
+coloured ring around whichever window has focus:
 
 ```bash
-kde-active-outline.sh                  # apply, Tokyo Night blue, 2px
-kde-active-outline.sh --color f7768e   # different colour
-kde-active-outline.sh --thickness 3    # thicker ring
-kde-active-outline.sh --show           # print current settings
-kde-active-outline.sh --off            # remove it
+active-window-border.sh start          # purple ring, 3px
+active-window-border.sh stop
+active-window-border.sh status
+AWB_COLOR=f7768e active-window-border.sh restart   # different colour
+AWB_WIDTH=5 active-window-border.sh restart        # thicker ring
+AWB_MODE=outset active-window-border.sh restart    # ring outside the frame
 ```
+
+`kde-setup.sh` installs an autostart entry, so it comes back on login.
+
+Configuration is by environment variable: `AWB_COLOR` (RRGGBB), `AWB_WIDTH`,
+`AWB_RADIUS`, `AWB_GAP`, `AWB_ALPHA`, `AWB_INTERVAL`, `AWB_MODE`.
+
+**Why a daemon rather than a KWin effect.** This was originally built on
+`kwin4_effect_shapecorners`. That effect loads, reports itself enabled, and
+logs "shaders loaded" — but never draws anything, verified at 8px in bright
+red. The KDE-native alternatives each fail for their own reason: Aurorae SVG
+themes such as Ant-Dark paint from their own SVGs and ignore the KDE colour
+scheme entirely, so setting `WM/activeBackground` does nothing; Breeze borders
+*do* honour it, but only by abandoning the Ant-Dark decoration. Drawing the
+ring ourselves — an always-on-top, click-through window tracking the focused
+window's frame, the approach `jankyborders` takes on macOS — is the only one
+that actually works here.
+
+Two details make it usable rather than infuriating: the window has an **empty
+input shape**, so it is completely click-through and never swallows clicks on
+window edges or resize handles; and it never accepts focus, which would
+otherwise send it into a loop chasing itself.
+
+`inset` mode (the default) draws the ring just inside the window edge, so it
+stays fully visible no matter how windows are tiled. `outset` draws it outside
+the frame and needs tiling gaps to have somewhere to go — see below.
 
 Inactive windows deliberately get **no** outline — a dim one reads as
 "sort of focused" and defeats the purpose. Requires compositing to be enabled.
+
+### Tiling gaps
+
+Bismuth tiles edge-to-edge by default. `kde-setup.sh` sets an 8px gap on both
+the screen edges and between tiles, via `[Script-bismuth]` in `kwinrc`.
+Override with `BISMUTH_GAP=12 bash profiles/kde-setup.sh --config-only`.
+
+Note that `qdbus org.kde.KWin /KWin reconfigure` alone does **not** make a KWin
+*script* re-read its config — the script has to be toggled off and back on,
+which `setup_bismuth_tiling()` handles.
 
 ## Work / machine-specific config
 
