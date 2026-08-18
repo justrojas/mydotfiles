@@ -92,171 +92,11 @@ log_info "Dotfiles: $DOTFILES_DIR"
 echo ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# Prompt the user whether to install a missing tool, then call the installer
-handle_missing_tool() {
-    local tool="$1"
-    local install_fn="$2"
-    local pinned_version="$3"
-
-    echo ""
-    log_warning "$tool is not installed (pinned version: $pinned_version)"
-
-    if [[ $NONINTERACTIVE -eq 1 ]]; then
-        log_info "Non-interactive mode: installing $tool automatically"
-        $install_fn || log_warning "$tool installation failed — continuing without it"
-        return
-    fi
-
-    echo "  [1/i] Install pinned version ($pinned_version)"
-    echo "  [2/s] Skip (continue without $tool)"
-    echo "  [3/a] Abort setup"
-    echo ""
-    read -rp "Choice [1/2/3]: " -n 1 choice </dev/tty
-    echo "" >&2
-
-    case "${choice,,}" in
-        1|i) $install_fn || log_warning "$tool installation failed — continuing without it" ;;
-        2|s) log_info "Skipping $tool" ;;
-        3|a) log_error "Setup aborted."; exit 1 ;;
-        *) log_info "No valid choice — skipping $tool" ;;
-    esac
-}
-
 # ============================================================================
 # Pre-flight: check for required tools, offer to install missing ones
 # ============================================================================
 log_step "Checking for required tools"
 
-# Returns the installed version string for tools we track precisely; empty for others.
-get_installed_version() {
-    case "$1" in
-        nvim)  nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || true ;;
-        tmux)  tmux -V 2>/dev/null | grep -oP '\d+\.\d+[a-z]?' | head -1 || true ;;
-        kitty) kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true ;;
-        *)     echo "" ;;
-    esac
-}
-
-# Is the installed tool older than the pinned version?
-#
-# CONVENTION: returns 0 (true) when the tool IS outdated, 1 (false) otherwise —
-# matching the function name and the `if is_tool_outdated ...; then upgrade`
-# call site.
-#
-# This was previously inverted (0 meant "up to date"), which made every check
-# backwards: current tools were reported stale, genuinely stale ones were
-# reported fine, and every "system" tool printed the nonsense
-# "is outdated (installed: ?, pinned: system)".
-is_tool_outdated() {
-    local tool="$1"
-
-    # _older_than lives in lib/installers.sh so purge_apt_kitty() can use it
-    # too — it used to be defined here, nested inside this function.
-
-    case "$tool" in
-        nvim)
-            local actual a_minor p_minor
-            actual=$(get_installed_version nvim)
-            # Unknown version — can't prove it's stale, so don't nag.
-            [[ -z "$actual" ]] && return 1
-            a_minor=$(echo "$actual"              | grep -oP '\d+\.\d+' | head -1)
-            p_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
-            _older_than "$a_minor" "$p_minor"
-            ;;
-        tmux)
-            local actual
-            actual="$(get_installed_version tmux)"
-            [[ -z "$actual" ]] && return 1
-            _older_than "$actual" "$PINNED_TMUX_VERSION"
-            ;;
-        kitty)
-            local actual
-            actual="$(get_installed_version kitty)"
-            [[ -z "$actual" ]] && return 1
-            # Minimum acceptable kitty is 0.33.0 — the release that fixed the
-            # keyboard-protocol bug behind the herdr double-keypress issue.
-            # We pin higher, but anything >= 0.33.0 is functionally correct.
-            _older_than "$actual" "$MIN_KITTY_VERSION"
-            ;;
-        *)  return 1 ;;  # system tools — no pinned version to enforce
-    esac
-}
-
-# True when a tool is below its hard MINIMUM — i.e. a version known to be
-# broken, as opposed to merely behind the pin.
-#
-# Only kitty has such a floor today: releases before 0.33.0 carry the
-# keyboard-protocol bug that double-fires Enter/Tab/Backspace inside herdr.
-# Being behind the pin is a preference and waits for --update; being below the
-# minimum is a defect and is fixed immediately.
-is_tool_below_minimum() {
-    case "$1" in
-        kitty)
-            local actual
-            actual="$(get_installed_version kitty)"
-            [[ -z "$actual" ]] && return 1
-            _older_than "$actual" "$MIN_KITTY_VERSION"
-            ;;
-        *)  return 1 ;;
-    esac
-}
-
-declare -A TOOL_VERSIONS=(
-    [tmux]="$PINNED_TMUX_VERSION"    [nvim]="$PINNED_NVIM_VERSION"
-    [kitty]="$PINNED_KITTY_VERSION"
-    [zsh]="$PINNED_ZSH_VERSION"
-    [git]="system"
-    [curl]="system"
-    [npm]="system"
-    [fzf]="system"
-    [eza]="system"
-    [batcat]="system"
-    [zoxide]="system"
-    [tree]="system"
-    [glow]="system"
-    [rsync]="system"
-    [rg]="system"
-    [fdfind]="system"
-    [magick]="system"
-    [pip3]="system"
-    [wl-copy]="system"
-    [herdr]="$PINNED_HERDR_VERSION"
-)
-
-declare -A TOOL_INSTALLERS=(
-    [tmux]="install_tmux"
-    [nvim]="install_nvim"
-    [kitty]="install_kitty"
-    [zsh]="install_zsh"
-    [git]="install_apt_package git"
-    [curl]="install_apt_package curl"
-    [npm]="install_nodejs"
-    [fzf]="install_fzf"
-    [eza]="install_eza"
-    [batcat]="install_apt_package bat batcat"
-    [zoxide]="install_zoxide"
-    [tree]="install_apt_package tree"
-    [glow]="install_glow"
-    [rsync]="install_apt_package rsync"
-    [rg]="install_apt_package ripgrep rg"
-    [fdfind]="install_apt_package fd-find fdfind"
-    [magick]="install_apt_package imagemagick magick convert"
-    [pip3]="install_apt_package python3-pip pip3"
-    [wl-copy]="install_apt_package wl-clipboard wl-copy"
-    [herdr]="install_herdr"
-)
 
 # Tools to check/install. --minimal drops the GUI-only ones: kitty (terminal
 # emulator), imagemagick (used for image previews in kitty), wl-clipboard
@@ -268,58 +108,11 @@ else
     TOOL_LIST=(tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr)
 fi
 
-# Some tools are reachable under more than one binary name depending on the
-# distro release. Keyed by TOOL_LIST entry; value is the set of acceptable
-# binaries. Without this, a present-but-differently-named tool is treated as
-# missing and reinstalled on every single run.
-declare -A TOOL_ALIASES=(
-    [magick]="magick convert"   # ImageMagick 7 vs 6
-)
-
-_tool_present() {
-    local candidate
-    for candidate in ${TOOL_ALIASES[$1]:-$1}; do
-        command -v "$candidate" >/dev/null 2>&1 && return 0
-    done
-    return 1
-}
-
-for tool in "${TOOL_LIST[@]}"; do
-    if _tool_present "$tool"; then
-        if is_tool_outdated "$tool"; then
-            actual=$(get_installed_version "$tool")
-            pinned="${TOOL_VERSIONS[$tool]}"
-            log_warning "$tool is outdated (installed: ${actual:-?}, pinned: $pinned)"
-
-            # A tool below its hard MINIMUM is upgraded whether or not --update
-            # was passed. "Behind the pin" is a preference; "below the minimum"
-            # means a known-broken version, and leaving it in place is how the
-            # herdr double-keypress kept surviving a full install: apt kitty
-            # 0.21.2 satisfied `command -v kitty`, so install-packages skipped
-            # it, and then this branch only warned. The user ended up with the
-            # exact version every part of this repo exists to avoid.
-            if is_tool_below_minimum "$tool"; then
-                log_warning "  ${actual:-?} is below the minimum safe version — upgrading regardless of --update"
-                ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
-            elif [[ $UPDATE_MODE -eq 1 ]]; then
-                log_info "Upgrading $tool..."
-                ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
-            else
-                log_info "Re-run with --update to upgrade automatically"
-            fi
-        else
-            # For tools with a detectable version, show it; otherwise just confirm presence
-            actual=$(get_installed_version "$tool")
-            if [[ -n "$actual" ]]; then
-                log_success "$tool found ($actual)"
-            else
-                log_success "$tool found"
-            fi
-        fi
-    else
-        handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]}"
-    fi
-done
+# The registry and the install/upgrade loop live in lib/installers.sh so
+# install-packages.sh uses the identical logic. It previously had its own
+# `command -v` loop with no version awareness, which is how a pre-existing
+# outdated kitty was waved through as "already installed".
+install_tools "${TOOL_LIST[@]}"
 
 # fzf may be installed via apt but the oh-my-zsh plugin requires ~/.fzf to exist
 if command -v fzf >/dev/null 2>&1 && [[ ! -d "$HOME/.fzf" ]]; then

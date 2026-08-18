@@ -588,3 +588,212 @@ install_nvim() {
 
     _confirm_install nvim "neovim ${PINNED_NVIM_VERSION}"
 }
+
+# ============================================================================
+# Tool registry + the shared install/upgrade loop
+# ============================================================================
+#
+# This lives here, not in a profile, because two profiles need it and used to
+# implement it twice. install-packages.sh had its own ad-hoc loop that checked
+# only `command -v`, so a tool that was present but *outdated* was reported
+# "already installed" and skipped — which is how apt kitty 0.21.2 survived a
+# full desktop install and kept the herdr double-keypress alive. Version
+# awareness now applies wherever tools are installed.
+
+# Installed version for tools we track precisely; empty for everything else.
+get_installed_version() {
+    case "$1" in
+        nvim)  nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || true ;;
+        tmux)  tmux -V 2>/dev/null | grep -oP '\d+\.\d+[a-z]?' | head -1 || true ;;
+        kitty) kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true ;;
+        *)     echo "" ;;
+    esac
+}
+
+# Is the installed tool older than the pinned version?
+#
+# CONVENTION: returns 0 (true) when the tool IS outdated, 1 (false) otherwise —
+# matching the function name and the `if is_tool_outdated ...; then upgrade`
+# call site.
+#
+# This was previously inverted (0 meant "up to date"), which made every check
+# backwards: current tools were reported stale, genuinely stale ones were
+# reported fine, and every "system" tool printed the nonsense
+# "is outdated (installed: ?, pinned: system)".
+is_tool_outdated() {
+    case "$1" in
+        nvim)
+            local actual a_minor p_minor
+            actual=$(get_installed_version nvim)
+            # Unknown version — can't prove it's stale, so don't nag.
+            [[ -z "$actual" ]] && return 1
+            a_minor=$(echo "$actual"              | grep -oP '\d+\.\d+' | head -1)
+            p_minor=$(echo "$PINNED_NVIM_VERSION" | grep -oP '\d+\.\d+' | head -1)
+            _older_than "$a_minor" "$p_minor"
+            ;;
+        tmux)
+            local actual
+            actual="$(get_installed_version tmux)"
+            [[ -z "$actual" ]] && return 1
+            _older_than "$actual" "$PINNED_TMUX_VERSION"
+            ;;
+        kitty)
+            local actual
+            actual="$(get_installed_version kitty)"
+            [[ -z "$actual" ]] && return 1
+            _older_than "$actual" "$MIN_KITTY_VERSION"
+            ;;
+        *)  return 1 ;;  # system tools — no pinned version to enforce
+    esac
+}
+
+# True when a tool is below its hard MINIMUM — a version known to be broken,
+# as opposed to merely behind the pin.
+#
+# Only kitty has such a floor today: releases before 0.33.0 carry the
+# keyboard-protocol bug that double-fires Enter/Tab/Backspace inside herdr.
+# Behind the pin is a preference and waits for --update; below the minimum is a
+# defect and is fixed immediately.
+is_tool_below_minimum() {
+    case "$1" in
+        kitty)
+            local actual
+            actual="$(get_installed_version kitty)"
+            [[ -z "$actual" ]] && return 1
+            _older_than "$actual" "$MIN_KITTY_VERSION"
+            ;;
+        *)  return 1 ;;
+    esac
+}
+
+declare -A TOOL_VERSIONS=(
+    [tmux]="$PINNED_TMUX_VERSION"
+    [nvim]="$PINNED_NVIM_VERSION"
+    [kitty]="$PINNED_KITTY_VERSION"
+    [zsh]="$PINNED_ZSH_VERSION"
+    [herdr]="$PINNED_HERDR_VERSION"
+    [git]="system"
+    [curl]="system"
+    [npm]="system"
+    [fzf]="system"
+    [eza]="system"
+    [batcat]="system"
+    [zoxide]="system"
+    [tree]="system"
+    [glow]="system"
+    [rsync]="system"
+    [rg]="system"
+    [fdfind]="system"
+    [magick]="system"
+    [pip3]="system"
+    [wl-copy]="system"
+)
+
+declare -A TOOL_INSTALLERS=(
+    [tmux]="install_tmux"
+    [nvim]="install_nvim"
+    [kitty]="install_kitty"
+    [zsh]="install_zsh"
+    [herdr]="install_herdr"
+    [git]="install_apt_pkg git"
+    [curl]="install_apt_pkg curl"
+    [npm]="install_apt_pkg npm"
+    [fzf]="install_fzf"
+    [eza]="install_eza"
+    [batcat]="install_apt_pkg bat"
+    [zoxide]="install_zoxide"
+    [tree]="install_apt_pkg tree"
+    [glow]="install_glow"
+    [rsync]="install_apt_pkg rsync"
+    [rg]="install_apt_pkg ripgrep"
+    [fdfind]="install_apt_pkg fd-find"
+    [magick]="install_apt_pkg imagemagick"
+    [pip3]="install_apt_pkg python3-pip"
+    [wl-copy]="install_apt_pkg wl-clipboard"
+)
+
+# Some tools are reachable under more than one binary name depending on the
+# distro release. Keyed by tool name; value is the set of acceptable binaries.
+# Without this, a present-but-differently-named tool is treated as missing and
+# reinstalled on every single run.
+declare -A TOOL_ALIASES=(
+    [batcat]="batcat bat"
+    [fdfind]="fdfind fd"
+    [magick]="magick convert"
+)
+
+_tool_present() {
+    local candidate
+    for candidate in ${TOOL_ALIASES[$1]:-$1}; do
+        command -v "$candidate" >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
+# Prompt whether to install a missing tool, then call the installer.
+handle_missing_tool() {
+    local tool="$1" install_fn="$2" pinned_version="$3"
+
+    echo ""
+    log_warning "$tool is not installed (pinned version: $pinned_version)"
+
+    if [[ ${NONINTERACTIVE:-0} -eq 1 ]]; then
+        log_info "Non-interactive mode: installing $tool automatically"
+        $install_fn || log_warning "$tool installation failed — continuing without it"
+        return
+    fi
+
+    echo "  [1/i] Install pinned version ($pinned_version)"
+    echo "  [2/s] Skip (continue without $tool)"
+    echo "  [3/a] Abort setup"
+    echo ""
+    # Reads $TTY_STDIN, not /dev/tty — in a container or under `ssh -T` there
+    # is no /dev/tty and the redirect fails before the prompt is even shown.
+    local choice
+    read -rp "Choice [1/2/3]: " -n 1 choice <"${TTY_STDIN:-/dev/stdin}"
+    echo "" >&2
+
+    case "${choice,,}" in
+        1|i) $install_fn || log_warning "$tool installation failed — continuing without it" ;;
+        2|s) log_info "Skipping $tool" ;;
+        3|a) log_error "Setup aborted."; exit 1 ;;
+        *) log_info "No valid choice — skipping $tool" ;;
+    esac
+}
+
+# install_tools <tool>...
+#
+# The single place that decides, per tool: install it, upgrade it, or leave it
+# alone. Honours UPDATE_MODE for "behind the pin" and always acts on "below the
+# documented minimum".
+install_tools() {
+    local tool actual pinned
+    for tool in "$@"; do
+        if _tool_present "$tool"; then
+            if is_tool_outdated "$tool"; then
+                actual=$(get_installed_version "$tool")
+                pinned="${TOOL_VERSIONS[$tool]:-?}"
+                log_warning "$tool is outdated (installed: ${actual:-?}, pinned: $pinned)"
+
+                if is_tool_below_minimum "$tool"; then
+                    log_warning "  ${actual:-?} is below the minimum safe version — upgrading regardless of --update"
+                    ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
+                elif [[ ${UPDATE_MODE:-0} -eq 1 ]]; then
+                    log_info "Upgrading $tool..."
+                    ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
+                else
+                    log_info "Re-run with --update to upgrade automatically"
+                fi
+            else
+                actual=$(get_installed_version "$tool")
+                if [[ -n "$actual" ]]; then
+                    log_success "$tool found ($actual)"
+                else
+                    log_success "$tool found"
+                fi
+            fi
+        else
+            handle_missing_tool "$tool" "${TOOL_INSTALLERS[$tool]}" "${TOOL_VERSIONS[$tool]:-?}"
+        fi
+    done
+}

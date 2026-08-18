@@ -17,6 +17,14 @@ source "$DOTFILES_DIR/lib/installers.sh"
 
 init_common "$@"
 
+# This script has never prompted: it is the unattended package-installation
+# stage, invoked by desktop-setup.sh and by the Docker suites. install_tools()
+# falls back to an interactive three-way prompt for a missing tool, so declare
+# non-interactive intent explicitly — otherwise a missing tool would block
+# waiting for input that is never coming, or read EOF and silently skip the
+# install. Honours an explicit --non-interactive too, for symmetry.
+NONINTERACTIVE=1
+
 STEP_TOTAL=5
 
 # Tools installed by lib/installers.sh land in ~/.local/bin. Create it and adopt
@@ -50,11 +58,18 @@ check_internet
 # Core apt packages
 # ============================================================================
 log_step "Installing core packages"
+# NOTE: tmux and fzf are deliberately absent.
+#
+# apt's tmux on 22.04 is older than the pinned 3.4, and apt's fzf is too old
+# for the oh-my-zsh plugin integration, so terminal-setup builds tmux from
+# source and installs fzf via git immediately afterwards. Listing them here
+# meant a desktop install downloaded, compiled and discarded a second copy of
+# each — the same double-install this file's header already documents having
+# fixed for kitty and neovim. The build dependencies below (autoconf, libevent,
+# ncurses) are kept precisely because the source build needs them.
 apt_install \
     git wget curl unzip \
     zsh \
-    tmux \
-    fzf \
     bat \
     btop nvtop \
     neofetch xclip \
@@ -79,22 +94,21 @@ apt_install \
 # tarball into ~/.local/bin there — two binaries on PATH, pin silently defeated.
 #
 # All of it now lives once in lib/installers.sh, which both profiles source.
+#
+# The presence check used to be a bare `command -v` here, while terminal-setup
+# had a full version table. That gap is how apt kitty 0.21.2 survived a desktop
+# install: it satisfied `command -v kitty`, so this step reported "already
+# installed" and skipped it, and the herdr double-keypress came back. Both
+# profiles now share install_tools(), which knows about pinned versions and
+# hard minimums.
 log_step "Installing pinned third-party tools"
 
-for _tool in kitty:install_kitty \
-             eza:install_eza \
-             glow:install_glow \
-             zoxide:install_zoxide \
-             nvim:install_nvim; do
-    _cmd="${_tool%%:*}"
-    _fn="${_tool##*:}"
-    if command -v "$_cmd" >/dev/null 2>&1; then
-        log_success "$_cmd already installed"
-    else
-        "$_fn" || log_warning "$_cmd installation failed — continuing"
-    fi
-done
-unset _tool _cmd _fn
+# tmux and fzf are here rather than in the apt list above because both need
+# versions newer than 22.04 ships: tmux is built from source at the pin, and
+# fzf is installed via git so the oh-my-zsh plugin can find it. Routing them
+# through install_tools means terminal-setup's later pass sees them already
+# present and current, instead of building a second copy.
+install_tools kitty eza glow zoxide nvim tmux fzf
 
 
 # ============================================================================
