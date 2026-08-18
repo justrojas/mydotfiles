@@ -83,9 +83,8 @@ log_step "Step 3/4 — KDE Plasma customisations"
 
 install_kde=false
 if [[ $NONINTERACTIVE -eq 0 ]]; then
-    read -rp "Install KDE Plasma customisations? [y/N] " -n 1
-    echo ""
-    [[ "$REPLY" =~ ^[Yy]$ ]] && install_kde=true
+    reply=$(prompt_yn "Install KDE Plasma customisations? [y/N] " "n")
+    [[ "$reply" =~ ^[Yy]$ ]] && install_kde=true
 fi
 
 KDE_SCRIPT="$DOTFILES_DIR/profiles/kde-setup.sh"
@@ -112,9 +111,8 @@ if [[ $NONINTERACTIVE -eq 0 ]]; then
     log_info "a Tokyo Night palette, and Spotify/MPRIS controls via playerctl."
     log_warning "This will offer to remove/hide any Plasma panel on the top edge."
     echo ""
-    read -rp "Install the polybar top bar? [y/N] " -n 1
-    echo ""
-    [[ "$REPLY" =~ ^[Yy]$ ]] && install_bar=true
+    reply=$(prompt_yn "Install the polybar top bar? [y/N] " "n")
+    [[ "$reply" =~ ^[Yy]$ ]] && install_bar=true
 fi
 
 BAR_SCRIPT="$DOTFILES_DIR/profiles/bar-setup.sh"

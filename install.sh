@@ -49,7 +49,20 @@ echo "     Requires sudo"
 echo ""
 echo "  5) Quit"
 echo ""
-read -rp "Choice [1-5]: " -n 1 choice
+# The menu reads plain stdin, NOT $TTY_STDIN.
+#
+# $TTY_STDIN exists for prompts that happen part-way through a script whose own
+# stdin is busy — the `curl | bash` case — and it degrades to /dev/null when no
+# tty exists. That is right for a mid-run confirmation (take the default and
+# carry on) but wrong here: this menu selection *is* the script's input, so
+# reading /dev/null would make `echo 1 | install.sh` impossible and, under
+# `set -e`, the EOF would abort the script outright.
+#
+# `|| true` so an empty stdin falls through to the invalid-choice branch
+# instead of killing the script.
+choice=""
+read -rp "Choice [1-5]: " -n 1 choice || true
+echo ""
 echo ""
 
 run_profile() {
@@ -69,9 +82,8 @@ case "$choice" in
         log_info "Terminal Setup: configures tmux, kitty, neovim, zsh"
         log_info "Existing configs will be backed up with a timestamp"
         echo ""
-        read -rp "Continue? [y/N] " -n 1
-        echo ""
-        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        reply=$(prompt_yn "Continue? [y/N] " "n")
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
             run_profile terminal-setup.sh
         else
             log_info "Cancelled."
@@ -87,9 +99,8 @@ case "$choice" in
         log_info "Desktop Setup: installs packages + configures terminal + optional KDE"
         log_warning "Requires sudo access"
         echo ""
-        read -rp "Continue? [y/N] " -n 1
-        echo ""
-        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        reply=$(prompt_yn "Continue? [y/N] " "n")
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
             run_profile desktop-setup.sh
         else
             log_info "Cancelled."
@@ -105,9 +116,8 @@ case "$choice" in
         log_info "VM Setup: shell + neovim + tmux + CLI tools (no GUI components)"
         log_warning "Requires sudo access"
         echo ""
-        read -rp "Continue? [y/N] " -n 1
-        echo ""
-        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        reply=$(prompt_yn "Continue? [y/N] " "n")
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
             run_profile vm-setup.sh
         else
             log_info "Cancelled."
@@ -123,9 +133,8 @@ case "$choice" in
         log_info "Bar Setup: installs polybar + playerctl, links the bar config"
         log_warning "Requires sudo. Offers to remove/hide top Plasma panels."
         echo ""
-        read -rp "Continue? [y/N] " -n 1
-        echo ""
-        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        reply=$(prompt_yn "Continue? [y/N] " "n")
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
             run_profile bar-setup.sh
         else
             log_info "Cancelled."
@@ -137,6 +146,15 @@ case "$choice" in
         exit 0
         ;;
 
+    "")
+        # No input at all — stdin was empty or closed. That is not an error
+        # worth the "changes may have been partially applied" warning from the
+        # exit trap, because nothing ran.
+        echo ""
+        log_info "No choice made — nothing to do."
+        exit 0
+        ;;
+
     *)
         log_error "Invalid choice: $choice (expected 1-5)"
         exit 1
@@ -144,4 +162,4 @@ case "$choice" in
 esac
 
 echo ""
-log_success "Done. See $DOTFILES_DIR/docs/ for further guidance."
+log_info "See $DOTFILES_DIR/docs/ for further guidance."

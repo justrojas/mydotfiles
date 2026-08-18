@@ -238,12 +238,6 @@ setup_touchegg_config() {
 #
 # Kept (rather than deleted) so an older machine can still restore its old dock
 # by hand: cp -r config/kde/latte ~/.config/latte
-setup_latte_dock_config() {
-    log_warning "setup_latte_dock_config is deprecated and does nothing."
-    log_info "Latte Dock was archived upstream in 2023. Use Plasma panels or"
-    log_info "run profiles/bar-setup.sh for the polybar top bar."
-    return 0
-}
 
 # ============================================================================
 # KVANTUM (Qt theme engine)
@@ -658,23 +652,28 @@ install_fonts() {
 install_ant_dark_theme() {
     log_step "Installing Ant-Dark theme..."
 
-    local downloads_dir="$HOME/Downloads"
-    ensure_dir "$downloads_dir"
+    # Scratch space for the upstream clone.
+    #
+    # This used to be ~/Downloads/Ant, which had two problems: it collided with
+    # anything the user already had by that name, and the "already cloned?"
+    # guard meant an interrupted clone left a partial tree that every later run
+    # silently reused instead of re-cloning. mktemp -d gives a private
+    # directory per run, matching how the tarball installers in
+    # lib/installers.sh already work.
+    local work_dir
+    work_dir="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand work_dir now, not at trap time
+    trap "rm -rf '$work_dir'" RETURN
 
-    local ant_repo="$downloads_dir/Ant"
-    local dark_dir="$downloads_dir/Dark"
+    local ant_repo="$work_dir/Ant"
+    local dark_dir="$work_dir/Dark"
 
-    # Clone Ant theme repository
-    if [[ ! -d "$ant_repo" ]]; then
-        log_info "Cloning Ant theme repository..."
-        (
-            cd "$downloads_dir" || exit 1
-            run_or_dry git clone https://github.com/EliverLara/Ant.git
-        ) || {
-            log_error "Failed to clone Ant theme repository"
-            return 1
-        }
-    fi
+    log_info "Cloning Ant theme repository..."
+    # --depth 1: we copy files out of the worktree and throw the history away.
+    run_or_dry git clone --depth 1 https://github.com/EliverLara/Ant.git "$ant_repo" || {
+        log_error "Failed to clone Ant theme repository"
+        return 1
+    }
 
     # Extract Dark theme
     if [[ -d "$ant_repo/kde/Dark" ]]; then
@@ -734,9 +733,8 @@ install_ant_dark_theme() {
         return 1
     fi
 
-    # Cleanup
-    log_info "Cleaning up temporary files..."
-    run_or_dry rm -rf "$ant_repo" "$dark_dir"
+    # Scratch dir is removed by the RETURN trap set at the top, so it is
+    # cleaned up on the error paths above too, not just this one.
 }
 
 # ============================================================================
@@ -775,10 +773,11 @@ main() {
         echo "  - Install themes and customizations"
         echo "  - Backup existing configurations"
         echo
-        confirm "Do you want to continue?" "y" || {
+        reply=$(prompt_yn "Do you want to continue? [Y/n] " "y")
+        if [[ ! "$reply" =~ ^[Yy]$ ]]; then
             log_info "Installation cancelled by user"
             exit 0
-        }
+        fi
     fi
 
     # Steps that need apt / sudo / network. Skipped by --config-only, which is

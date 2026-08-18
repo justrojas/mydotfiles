@@ -274,10 +274,6 @@ safe_symlink() {
 }
 
 # ============================================================================
-# DOWNLOAD FUNCTIONS
-# ============================================================================
-
-# ============================================================================
 # PACKAGE MANAGEMENT
 # ============================================================================
 
@@ -312,6 +308,11 @@ apt_install() {
 # is no /dev/tty and the redirect fails outright.
 #
 # Usage: reply=$(prompt_yn "Question? [y/N] " "n")
+# The single prompting primitive. A second helper, confirm(), used to exist
+# alongside this one; it read plain stdin and ignored $NONINTERACTIVE, so it
+# behaved differently from every other prompt in the repo in exactly the
+# environments (containers, ssh -T, CI) the $TTY_STDIN probe exists to handle.
+# It had one caller and has been removed.
 prompt_yn() {
     local question="$1" default="${2:-n}"
     if [[ ${NONINTERACTIVE:-0} -eq 1 ]]; then
@@ -323,29 +324,6 @@ prompt_yn() {
     echo "${REPLY:-$default}"
 }
 
-confirm() {
-    local prompt="${1:-Do you want to continue?}"
-    local default="${2:-n}"  # Default to 'n' for safety
-
-    local options
-    if [[ "$default" == "y" ]]; then
-        options="[Y/n]"
-    else
-        options="[y/N]"
-    fi
-
-    read -p "$prompt $options " -r response
-    response=${response:-$default}
-
-    case "$response" in
-        [yY]|[yY][eE][sS])
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
 
 # ============================================================================
 # ERROR HANDLING
