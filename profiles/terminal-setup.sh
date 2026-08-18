@@ -162,10 +162,8 @@ get_installed_version() {
 is_tool_outdated() {
     local tool="$1"
 
-    # older_than <have> <want> → true when have < want
-    _older_than() {
-        [[ "$(printf '%s\n' "$1" "$2" | sort -V | head -1)" == "$1" && "$1" != "$2" ]]
-    }
+    # _older_than lives in lib/installers.sh so purge_apt_kitty() can use it
+    # too — it used to be defined here, nested inside this function.
 
     case "$tool" in
         nvim)
@@ -196,9 +194,27 @@ is_tool_outdated() {
     esac
 }
 
+# True when a tool is below its hard MINIMUM — i.e. a version known to be
+# broken, as opposed to merely behind the pin.
+#
+# Only kitty has such a floor today: releases before 0.33.0 carry the
+# keyboard-protocol bug that double-fires Enter/Tab/Backspace inside herdr.
+# Being behind the pin is a preference and waits for --update; being below the
+# minimum is a defect and is fixed immediately.
+is_tool_below_minimum() {
+    case "$1" in
+        kitty)
+            local actual
+            actual="$(get_installed_version kitty)"
+            [[ -z "$actual" ]] && return 1
+            _older_than "$actual" "$MIN_KITTY_VERSION"
+            ;;
+        *)  return 1 ;;
+    esac
+}
+
 declare -A TOOL_VERSIONS=(
-    [tmux]="$PINNED_TMUX_VERSION"
-    [nvim]="$PINNED_NVIM_VERSION"
+    [tmux]="$PINNED_TMUX_VERSION"    [nvim]="$PINNED_NVIM_VERSION"
     [kitty]="$PINNED_KITTY_VERSION"
     [zsh]="$PINNED_ZSH_VERSION"
     [git]="system"
@@ -274,7 +290,18 @@ for tool in "${TOOL_LIST[@]}"; do
             actual=$(get_installed_version "$tool")
             pinned="${TOOL_VERSIONS[$tool]}"
             log_warning "$tool is outdated (installed: ${actual:-?}, pinned: $pinned)"
-            if [[ $UPDATE_MODE -eq 1 ]]; then
+
+            # A tool below its hard MINIMUM is upgraded whether or not --update
+            # was passed. "Behind the pin" is a preference; "below the minimum"
+            # means a known-broken version, and leaving it in place is how the
+            # herdr double-keypress kept surviving a full install: apt kitty
+            # 0.21.2 satisfied `command -v kitty`, so install-packages skipped
+            # it, and then this branch only warned. The user ended up with the
+            # exact version every part of this repo exists to avoid.
+            if is_tool_below_minimum "$tool"; then
+                log_warning "  ${actual:-?} is below the minimum safe version — upgrading regardless of --update"
+                ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
+            elif [[ $UPDATE_MODE -eq 1 ]]; then
                 log_info "Upgrading $tool..."
                 ${TOOL_INSTALLERS[$tool]} || log_warning "$tool upgrade failed — continuing"
             else

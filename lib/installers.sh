@@ -43,6 +43,19 @@ readonly MIN_KITTY_VERSION="0.33.0"
 # NOTE: oh-my-posh is intentionally NOT pinned — its installer always fetches
 # the current release.
 
+# Version comparison: true when <have> is older than <want>.
+#
+# Lives here rather than in a profile because both the version checks and
+# purge_apt_kitty need it. It was previously nested *inside* is_tool_outdated()
+# in terminal-setup.sh, so it did not exist for anything sourcing only this
+# file — purge_apt_kitty's safety check silently fell through to a bare
+# "command not found" and purged anyway.
+#
+# sort -V handles the usual dotted forms (0.21.2, 3.4, v0.11.6 once stripped).
+_older_than() {
+    [[ "$(printf '%s\n' "$1" "$2" | sort -V | head -1)" == "$1" && "$1" != "$2" ]]
+}
+
 # ============================================================================
 # apt-get update deduplication — run at most once per sourcing process
 # ============================================================================
@@ -219,13 +232,37 @@ install_kitty() {
 # does not depend on the apt kitty-terminfo package surviving this.
 purge_apt_kitty() {
     if [[ ${DRY_RUN:-0} -eq 1 ]]; then
-        log_info "[DRY RUN] Would purge apt-provided kitty if installed"
+        log_info "[DRY RUN] Would purge apt-provided kitty if a working replacement exists"
         return 0
     fi
 
     dpkg -l kitty 2>/dev/null | grep -q '^ii' || return 0
 
+    # NEVER purge without a working replacement in place.
+    #
+    # The tool loop in terminal-setup only *upgrades* an outdated tool when
+    # --update is passed; otherwise it warns and moves on. So on a machine
+    # whose only kitty was apt's 0.21.2, an unconditional purge here removed
+    # the sole terminal emulator and installed nothing — leaving the user with
+    # no kitty at all. Verify the pinned build is actually present and new
+    # enough first, and say why we're skipping if it isn't.
+    local pinned_bin="$HOME/.local/kitty.app/bin/kitty"
+    if [[ ! -x "$pinned_bin" ]]; then
+        log_warning "Not purging apt kitty: no replacement at $pinned_bin"
+        log_info    "  Install the pinned build first (terminal-setup.sh --update),"
+        log_info    "  otherwise removing apt kitty would leave you with no terminal."
+        return 1
+    fi
+
+    local pinned_ver
+    pinned_ver="$("$pinned_bin" --version 2>/dev/null | awk '{print $2}')"
+    if [[ -z "$pinned_ver" ]] || _older_than "$pinned_ver" "$MIN_KITTY_VERSION"; then
+        log_warning "Not purging apt kitty: replacement is ${pinned_ver:-unreadable}, older than $MIN_KITTY_VERSION"
+        return 1
+    fi
+
     log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
+    log_info "  replacement in place: kitty $pinned_ver at $pinned_bin"
     if sudo apt-get purge -y kitty 2>/dev/null; then
         log_success "Removed apt kitty"
     else
