@@ -119,6 +119,11 @@ fi
 log_step "Autostart + existing panels"
 
 # Autostart the bar on login. KDE reads ~/.config/autostart/*.desktop.
+#
+# --watch keeps it resident so the bar survives docking and undocking. Without
+# it, a monitor change kills every bar and nothing respawns them: polybar
+# reloads itself on RandR, re-reads the config, and exits with
+# "Monitor <name> not found or disconnected" for the output it was pinned to.
 autostart_dir="$HOME/.config/autostart"
 autostart_file="$autostart_dir/polybar.desktop"
 ensure_dir "$autostart_dir"
@@ -128,7 +133,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
 Type=Application
 Name=Polybar
 Comment=Top bar (managed by my-dotfiles)
-Exec=$HOME/.local/bin/bar
+Exec=$HOME/.local/bin/bar --watch
 Terminal=false
 X-GNOME-Autostart-enabled=true
 X-KDE-autostart-phase=2

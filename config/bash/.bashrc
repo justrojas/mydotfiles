@@ -221,5 +221,17 @@ if [[ ${BLE_VERSION-} ]]; then
     ble-bind -m auto_complete -f 'C-f' auto_complete/insert
     ble-bind -m auto_complete -f 'right' auto_complete/insert
 
+    # Enter always runs the command — even multiline ones. By default ble.sh
+    # binds RET to accept-single-line-or-newline: the moment a command contains
+    # a newline (pasted blocks, for-loops, `\`-continued lines) it enters
+    # MULTILINE mode, where Enter just inserts another newline and you must press
+    # C-j to execute. C-j is bound to pane navigation in both herdr and tmux, so
+    # it never reaches the shell and the command hangs half-typed. Rebinding
+    # RET/C-m to `accept-line syntax` makes Enter execute as soon as the command
+    # is syntactically complete, and only insert a newline while it is genuinely
+    # incomplete — so multiline editing still works, minus the C-j requirement.
+    ble-bind -f 'C-m' 'accept-line syntax'
+    ble-bind -f 'RET' 'accept-line syntax'
+
     ble-attach
 fi
