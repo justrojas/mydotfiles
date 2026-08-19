@@ -136,9 +136,9 @@ kt preview <name>    # preview without applying
 two are kept at feature parity and share `config/shell/`.
 
 - **Prompt**: oh-my-posh, Tokyo Night Storm — two-line powerline theme
-- **Autosuggestions + syntax highlighting**: via [ble.sh](https://github.com/akinomyoga/ble.sh)
-  in bash, zsh-autosuggestions/zsh-syntax-highlighting in zsh. Grey ghost text
-  from history — press `→` or `Ctrl-F` to accept.
+- **Autosuggestions + syntax highlighting**: zsh only
+  (zsh-autosuggestions / zsh-syntax-highlighting). See "Why bash has no
+  autosuggestions" below.
 - **Navigation**: zoxide replaces `cd` (learns frequently used directories);
   `cdi` opens an interactive picker
 - **File listing**: eza aliases (`l`, `ls`, `la`, `ld`) — these fall back to
@@ -153,25 +153,33 @@ two are kept at feature parity and share `config/shell/`.
 - **Docker helpers**: `dls`, `dsh`, `dkill`, `drm`, ... from `config/shell/docker_functions.bash`
 - **Work config**: `~/.bashrc.work` / `~/.zshrc.work` for machine-specific config (not tracked)
 
-### Why ble.sh
+### Why bash has no autosuggestions
 
 Bash has no native equivalent of `zsh-autosuggestions` (inline grey completion
 from history) or `zsh-syntax-highlighting` (commands coloured as you type).
-ble.sh replaces readline outright and provides both, so moving from zsh to bash
-does not mean losing them.
 
-It is loaded in two phases in `.bashrc` — sourced with `--attach=none` near the
-top, then `ble-attach` as the very last statement. Attaching early would let it
-capture `PROMPT_COMMAND` before oh-my-posh sets it, and the prompt renders
-wrong. If ble.sh is not installed, bash silently falls back to plain readline.
+This repo used [ble.sh](https://github.com/akinomyoga/ble.sh) for both. It has
+been **removed**, because it garbles multi-line input.
 
-Building it needs **gawk** (the build rejects Ubuntu's default mawk) and
-`make`; `terminal-setup.sh` installs both.
+The mechanism: ble.sh replaces readline wholesale and binds Enter to
+`accept-single-line-or-newline`. As soon as a command contains a newline — a
+pasted block, a `for` loop, a `\`-continued line — it enters MULTILINE mode,
+where Enter inserts another newline and only `C-j` executes. Both herdr and
+tmux bind `C-j` to pane navigation, so it never reaches the shell and the
+command sits there half-typed. Rebinding Enter to `accept-line syntax` was
+tried and did not hold.
 
-> Tab is deliberately left on readline's default `complete` action. An earlier
-> revision bound it to `menu-complete`, which cycles through matches instead of
-> completing the shared prefix — that feels like completion is broken. Shift-Tab
-> cycles if you want that behaviour.
+`terminal-setup.sh` deletes any leftover install (`~/.local/share/blesh` and
+the `~/.cache/ble.sh` clone). `gawk` was an apt dependency solely for its build
+and has been dropped.
+
+Bash therefore uses plain readline, tuned in `config/bash/.bashrc`:
+case-insensitive completion, candidates listed on the first Tab
+(`show-all-if-ambiguous`), coloured stats, and menu-cycling on Shift-Tab so Tab
+keeps its normal complete-the-prefix behaviour.
+
+If you want the zsh features, `shell-toggle` switches shells and the preference
+persists — the two configurations are otherwise kept at parity.
 
 ### Switching shells
 

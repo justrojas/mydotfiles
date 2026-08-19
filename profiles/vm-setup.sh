@@ -94,8 +94,6 @@ VM_PACKAGES=(
     # terminfo database — without ncurses-bin there is no `tic`/`infocmp`,
     # and config/shell/env.sh cannot validate or repair a bogus $TERM.
     ncurses-bin ncurses-term
-    # gawk: ble.sh's build requires GNU awk specifically; Ubuntu ships mawk
-    gawk
     # misc
     unzip ca-certificates gnupg
 )

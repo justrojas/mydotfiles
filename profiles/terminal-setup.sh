@@ -421,14 +421,10 @@ if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
         fi
     fi
 
-    # ble.sh — bash's answer to zsh-autosuggestions + zsh-syntax-highlighting.
-    # Not in the TOOL_LIST loop above because it is not a binary on PATH; it is
-    # a library sourced by .bashrc from ~/.local/share/blesh.
-    if [[ -f "$HOME/.local/share/blesh/ble.sh" ]]; then
-        log_success "ble.sh already installed"
-    else
-        install_blesh
-    fi
+    # ble.sh was removed: it garbles multi-line input (Enter stops executing
+    # once a command contains a newline; only C-j does, and herdr/tmux bind
+    # C-j to pane navigation). Tear down anything an earlier run installed.
+    remove_blesh
 else
     log_error "bash config not found at $DOTFILES_DIR/config/bash"
 fi

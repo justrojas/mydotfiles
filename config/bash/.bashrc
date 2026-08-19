@@ -16,28 +16,6 @@ export DOTFILES="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/../.. &&
 # --- Shell preference / bash<->zsh toggle (may exec away) -------------------
 source "$DOTFILES/config/shell/switch.sh"
 
-# --- ble.sh (load early, attach last) ---------------------------------------
-# ble.sh is the Bash Line Editor — it replaces readline and is the only real
-# way to get the two zsh features bash has no native answer for:
-#
-#   zsh-autosuggestions     -> grey inline ghost text from history, Right/End
-#                              or Ctrl-F to accept
-#   zsh-syntax-highlighting -> commands coloured as you type (red = not found)
-#
-# It also brings menu completion with a proper selectable list, so it fixes
-# "bash completion feels worse than zsh" as well.
-#
-# Loading is a two-phase dance: source with --attach=none HERE (before anything
-# else touches the prompt or key bindings), then call `ble-attach` at the very
-# END of this file. Attaching early would make ble.sh capture PROMPT_COMMAND
-# before oh-my-posh sets it, and the prompt would render wrong.
-#
-# Installed by profiles/terminal-setup.sh. Absent = everything still works,
-# you just fall back to plain readline.
-if [[ $- == *i* && -f "$HOME/.local/share/blesh/ble.sh" ]]; then
-    source "$HOME/.local/share/blesh/ble.sh" --attach=none
-fi
-
 # --- History ----------------------------------------------------------------
 export HISTSIZE=10000
 export HISTFILESIZE=10000
@@ -188,50 +166,3 @@ fi
 # NOTE: ~/.bun/_bun is a ZSH completion script (`#compdef bun`) — sourcing it
 # from bash floods the terminal with "autoload: command not found". Bun has no
 # bash completion of its own, so there is deliberately nothing to source here.
-
-# --- ble.sh attach (MUST be last) -------------------------------------------
-# Phase two of the load started at the top of this file. Attaching here — after
-# oh-my-posh has set PROMPT_COMMAND and after every `bind` call — lets ble.sh
-# wrap the finished prompt instead of racing it.
-if [[ ${BLE_VERSION-} ]]; then
-    # Autosuggestions: grey ghost text from history, exactly like
-    # zsh-autosuggestions. Accept the whole thing with Right arrow or End;
-    # accept one word with Ctrl-Right.
-    bleopt complete_auto_complete=1
-    bleopt complete_ambiguous=1
-    bleopt complete_auto_history=1
-    # Don't pop the completion menu up on its own; Tab still drives it.
-    bleopt complete_menu_complete=1
-    bleopt complete_menu_style=desc
-
-    # Muted grey for the suggestion so it reads as a hint, not as input.
-    ble-face -s auto_complete fg=240
-
-    # Syntax highlighting colours (Tokyo Night Storm, matching the prompt).
-    ble-face -s syntax_command      fg=#7aa2f7
-    ble-face -s syntax_error        fg=#f7768e
-    ble-face -s syntax_quoted       fg=#9ece6a
-    ble-face -s syntax_varname      fg=#e0af68
-    ble-face -s syntax_comment      fg=#565f89
-    ble-face -s command_alias       fg=#7dcfff
-    ble-face -s command_function    fg=#bb9af7
-    ble-face -s filename_directory  fg=#7aa2f7,underline
-
-    # Accept the suggestion with Right/End even mid-line.
-    ble-bind -m auto_complete -f 'C-f' auto_complete/insert
-    ble-bind -m auto_complete -f 'right' auto_complete/insert
-
-    # Enter always runs the command — even multiline ones. By default ble.sh
-    # binds RET to accept-single-line-or-newline: the moment a command contains
-    # a newline (pasted blocks, for-loops, `\`-continued lines) it enters
-    # MULTILINE mode, where Enter just inserts another newline and you must press
-    # C-j to execute. C-j is bound to pane navigation in both herdr and tmux, so
-    # it never reaches the shell and the command hangs half-typed. Rebinding
-    # RET/C-m to `accept-line syntax` makes Enter execute as soon as the command
-    # is syntactically complete, and only insert a newline while it is genuinely
-    # incomplete — so multiline editing still works, minus the C-j requirement.
-    ble-bind -f 'C-m' 'accept-line syntax'
-    ble-bind -f 'RET' 'accept-line syntax'
-
-    ble-attach
-fi

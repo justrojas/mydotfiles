@@ -468,60 +468,35 @@ install_fzf() {
     _confirm_install fzf "fzf"
 }
 
-# Install ble.sh — the Bash Line Editor.
+# Remove a previously-installed ble.sh.
 #
-# This is what closes the last real gap between our bash and zsh setups. Bash
-# has no native equivalent of zsh-autosuggestions (grey inline ghost text from
-# history) or zsh-syntax-highlighting (commands coloured as you type). ble.sh
-# replaces readline wholesale and provides both, plus a proper selectable
-# completion menu.
+# ble.sh provided bash's answer to zsh-autosuggestions and
+# zsh-syntax-highlighting. It was removed because it garbles multi-line input.
 #
-# Built from source: there is no apt package, and the release tarballs lag.
-install_blesh() {
-    log_info "Installing ble.sh (bash autosuggestions + syntax highlighting)..."
-    if [[ $DRY_RUN -eq 1 ]]; then
-        log_info "[DRY RUN] Would build ble.sh into ~/.local/share/blesh"
-        return 0
-    fi
-
-    if ! command -v make >/dev/null 2>&1; then
-        log_warning "make not found — skipping ble.sh (install build-essential and re-run)"
-        return 0
-    fi
-
-    # ble.sh's build is written against GNU awk specifically and refuses to run
-    # with mawk, which is what Ubuntu ships by default. Without this the build
-    # dies with "Sorry, gawk could not be found."
-    if ! command -v gawk >/dev/null 2>&1; then
-        log_info "Installing gawk (required to build ble.sh)..."
-        apt_update_once
-        sudo apt-get install -y gawk 2>/dev/null || {
-            log_warning "Could not install gawk — skipping ble.sh"
-            return 0
-        }
-    fi
-
+# The specific failure: ble.sh binds RET to accept-single-line-or-newline, so
+# the moment a command contains a newline — a pasted block, a for-loop, a
+# backslash continuation — it switches to MULTILINE mode where Enter inserts
+# another newline and only C-j executes. C-j is bound to pane navigation in
+# both herdr and tmux, so it never reaches the shell and the command sits
+# half-typed. Rebinding RET to `accept-line syntax` was tried and did not hold.
+#
+# Every machine that ran the old profile has an install left behind, so clean
+# it up rather than leaving ~26MB of unused build plus a stale clone that a
+# future .bashrc edit might start sourcing again by accident.
+remove_blesh() {
+    local installed="$HOME/.local/share/blesh"
     local src="$HOME/.cache/ble.sh"
-    if [[ -d "$src/.git" ]]; then
-        git -C "$src" pull --quiet --recurse-submodules || {
-            log_warning "ble.sh update failed — keeping existing install"
-            return 0
-        }
-    else
-        rm -rf "$src"
-        git clone --recursive --depth 1 --shallow-submodules \
-            https://github.com/akinomyoga/ble.sh.git "$src" --quiet || {
-            log_warning "Could not clone ble.sh — continuing without it"
-            return 0
-        }
+
+    [[ -d "$installed" || -d "$src" ]] || return 0
+
+    if [[ ${DRY_RUN:-0} -eq 1 ]]; then
+        log_info "[DRY RUN] Would remove $installed and $src"
+        return 0
     fi
 
-    # Installs to $PREFIX/share/blesh.
-    if make -C "$src" install PREFIX="$HOME/.local" >/dev/null 2>&1; then
-        log_success "ble.sh installed to ~/.local/share/blesh"
-    else
-        log_warning "ble.sh build failed — bash will fall back to plain readline"
-    fi
+    log_info "Removing ble.sh (no longer used — it garbles multi-line input)..."
+    rm -rf "$installed" "$src"
+    log_success "ble.sh removed"
 }
 
 # Install tmux 3.4 from source (Ubuntu 22.04 apt only has 3.2a)

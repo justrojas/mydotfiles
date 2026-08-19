@@ -199,30 +199,29 @@ Do NOT add a `chsh`/`usermod` step or an `exec zsh` line to an rc file. The rc
 files are symlinks into this repo, so appending to them dirties the working
 tree on every install.
 
-### ble.sh (bash only)
+### ble.sh — REMOVED, do not reintroduce
 
-`~/.local/share/blesh/ble.sh` — the Bash Line Editor. Provides the two things
-readline cannot: autosuggestions (zsh-autosuggestions equivalent) and syntax
-highlighting (zsh-syntax-highlighting equivalent).
+`ble.sh` (the Bash Line Editor) used to provide autosuggestions and syntax
+highlighting for bash. It has been removed.
 
-Load order is load-bearing and easy to break:
+Reason: it **garbles multi-line input**. ble.sh binds RET to
+`accept-single-line-or-newline`, so once a command contains a newline (pasted
+block, `for` loop, `\`-continuation) it enters MULTILINE mode where Enter only
+inserts a newline and `C-j` is required to execute. herdr and tmux both bind
+`C-j` to pane navigation, so it never reaches the shell. A workaround binding
+RET to `accept-line syntax` was tried and did not hold.
 
-1. **Top of `.bashrc`**, right after `switch.sh`:
-   `source ~/.local/share/blesh/ble.sh --attach=none`
-2. **Very last statement of `.bashrc`**: `ble-attach`, inside `if [[ ${BLE_VERSION-} ]]`
+Its load order was also fragile: sourced with `--attach=none` near the top of
+`.bashrc`, `ble-attach` as the very last statement, because attaching before
+oh-my-posh ran captured a half-built `PROMPT_COMMAND`.
 
-Attaching before oh-my-posh runs makes ble.sh capture a half-built
-`PROMPT_COMMAND` and the prompt renders incorrectly. Any `bleopt` / `ble-face`
-/ `ble-bind` calls must sit between the two phases.
+`remove_blesh()` in `lib/installers.sh` cleans up machines that ran the old
+profile (`~/.local/share/blesh`, `~/.cache/ble.sh`). `gawk` was an apt
+dependency solely for its build and has been dropped from `install-packages.sh`
+and `vm-setup.sh`.
 
-Built from source by `install_blesh()` in `profiles/terminal-setup.sh`. It is
-NOT in the `TOOL_LIST` loop because it is a sourced library, not a binary on
-PATH — the loop keys off `command -v`. Requires **gawk** specifically; the
-build hard-fails on Ubuntu's default mawk with "Sorry, gawk could not be
-found." `gawk` is in the apt lists of both `install-packages.sh` and
-`vm-setup.sh`, and `install_blesh()` installs it as a fallback.
-
-Absent ble.sh, `.bashrc` degrades to plain readline with no errors.
+Bash now uses plain readline, tuned in `config/bash/.bashrc`. For
+autosuggestions use zsh — `shell-toggle` switches and the preference persists.
 
 ### Completion
 
