@@ -36,6 +36,60 @@ _prepend_path "$BUN_INSTALL/bin"
 # zsh used to get this for free via the oh-my-zsh `fzf` plugin; bash has no
 # equivalent, so it must be on PATH explicitly or `fzf` is simply missing.
 _prepend_path "$FZF_BASE/bin"
+
+# --- node (nvm's default version, on PATH for CHILD PROCESSES) --------------
+#
+# .bashrc lazy-loads nvm by defining node/npm/npx as shell FUNCTIONS. Shell
+# functions are not inherited by child processes, so that only ever worked for
+# a human typing `node` at the prompt. Anything that *spawns* node resolves it
+# through PATH and gets whatever is in /usr/bin — on Ubuntu 22.04 that is node
+# 12, and every tool with a modern floor fails:
+#
+#   Formatter 'prettier' error: prettier requires at least version 14 of Node
+#
+# That error was recurring in conform.log for months while `node --version` in
+# the shell reported a perfectly good v18, because the two were resolving
+# different binaries.
+#
+# So put nvm's default version on PATH directly. This is a glob and a string
+# compare — it does NOT source nvm.sh, so shell startup stays fast and the lazy
+# loading below is untouched.
+if [ -d "$NVM_DIR/versions/node" ]; then
+    _nvm_want="$(cat "$NVM_DIR/alias/default" 2>/dev/null || echo '')"
+    _nvm_bin=""
+
+    case "$_nvm_want" in
+        v[0-9]*)
+            # A full version, e.g. "v18.20.6".
+            if [ -d "$NVM_DIR/versions/node/$_nvm_want/bin" ]; then
+                _nvm_bin="$NVM_DIR/versions/node/$_nvm_want/bin"
+            fi
+            ;;
+        [0-9]*)
+            # A major line, e.g. "18" — take the highest installed match.
+            for _d in "$NVM_DIR/versions/node/v$_nvm_want".*; do
+                if [ -d "$_d/bin" ]; then _nvm_bin="$_d/bin"; fi
+            done
+            ;;
+    esac
+
+    # No usable default (unset, or an alias like lts/*): fall back to the
+    # newest installed version rather than leaving node 12 in charge.
+    if [ -z "$_nvm_bin" ]; then
+        for _d in "$NVM_DIR"/versions/node/v*; do
+            if [ -d "$_d/bin" ]; then _nvm_bin="$_d/bin"; fi
+        done
+    fi
+
+    if [ -n "$_nvm_bin" ]; then
+        case ":$PATH:" in
+            *":$_nvm_bin:"*) ;;
+            *) PATH="$_nvm_bin:$PATH" ;;
+        esac
+    fi
+    unset _nvm_want _nvm_bin _d
+fi
+
 export PATH
 unset -f _prepend_path
 
