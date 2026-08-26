@@ -82,7 +82,8 @@ apt_install \
     p7zip-full \
     autoconf automake libtool \
     build-essential libevent-dev libncurses5-dev libncursesw5-dev \
-    gpg
+    gpg \
+    gawk
 
 # ============================================================================
 # Pinned third-party tools
