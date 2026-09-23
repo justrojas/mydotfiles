@@ -121,10 +121,13 @@ install.sh
 ### `--minimal` mode
 
 `terminal-setup.sh --minimal` is the headless variant used by `vm-setup.sh`.
-It skips 3 of the 11 steps (Nerd fonts, kitty config, herdr) and drops
+It skips 3 steps (Nerd fonts, kitty config, herdr) and drops
 kitty/imagemagick/wl-clipboard/herdr from the tool-install list. `STEP_TOTAL`
-is adjusted to 8 accordingly — **if you add or remove a `log_step` call you
-must update both branches of that conditional.**
+is **derived** from the `STEP_NAMES` registry, which varies with both
+`--minimal` and `--shell` (10 steps full, 7 minimal, per shell) — add or remove
+a `log_step` and you must add or remove the matching `STEP_NAMES` entry.
+`tests/test-step-total.sh` asserts the two stay in sync across all four flag
+combinations.
 
 ## Symlink Locations
 
@@ -175,7 +178,7 @@ feature parity. Three layers:
 
 | Layer | Files | Loaded by |
 |---|---|---|
-| shared | `config/shell/{env,aliases,switch}.sh` + `docker_functions.bash` | both |
+| shared | `config/shell/{env,aliases}.sh` + `docker_functions.bash` | both |
 | bash   | `config/bash/{.bashrc,.bash_profile}` | bash |
 | zsh    | `config/zsh/.zshrc` | zsh |
 
@@ -302,7 +305,8 @@ Plugins (TPM submodules in `config/tmux/plugins/`):
   - The **Mono** variant is required in a terminal — it forces icon glyphs to a
     single cell. The plain / Propo variants overlap the next character.
   - polybar deliberately uses the NON-Mono variant; a status bar is not a grid.
-- Default shell: `bash` (`shell bash` in kitty.conf)
+- Default shell: inherited from the login shell. kitty.conf deliberately sets
+  no `shell` directive — see "Which shell you get".
 - Theme: set via `config/kitty/theme.conf`
 - 169 themes in `config/kitty/kitty-themes/themes/`
 - Switch themes with `kt` (kitty theme switcher):
