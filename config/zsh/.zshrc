@@ -100,8 +100,14 @@ deferred_load() {
 zmodload zsh/sched 2>/dev/null && sched +1 deferred_load
 
 # --- Prompt (oh-my-posh) ----------------------------------------------------
+# Fallback chain kept identical to .bashrc: installer-managed current theme,
+# then the tracked tokyonight_storm, then the legacy config/zsh copy, then
+# whatever oh-my-posh cached. The two files used to disagree — zsh skipped
+# tokyonight_storm entirely — so the same machine rendered a different prompt
+# depending on which shell you were in.
 if command -v oh-my-posh >/dev/null 2>&1; then
     OMP_CONFIG="$HOME/.config/oh-my-posh/current.omp.json"
+    [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="$DOTFILES/config/oh-my-posh/tokyonight_storm.omp.json"
     [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="$DOTFILES/config/zsh/oh-my-posh.omp.json"
     [[ ! -f "$OMP_CONFIG" ]] && OMP_CONFIG="$HOME/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json"
     eval "$(oh-my-posh init zsh --config "$OMP_CONFIG")"
