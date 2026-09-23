@@ -4,8 +4,11 @@ onboarding = false
 channel = "stable"
 
 [terminal]
-# bash is the primary interactive shell; `tozsh` / `shell-toggle` switch to zsh.
-default_shell = "/bin/bash"
+# No `default_shell` on purpose: the interactive shell is chosen once, at
+# install time, and applied with chsh. Setting it here would reintroduce a
+# second source of truth — herdr seeds this value from $SHELL on first run,
+# which is how a zsh box ended up permanently baking in the wrong shell.
+# Unset means herdr uses the login shell.
 
 # =============================================================================
 # Keybindings — mirrors .tmux.conf with prefix changed to ctrl+space

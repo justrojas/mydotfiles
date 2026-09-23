@@ -37,11 +37,26 @@ source "$DOTFILES_DIR/lib/installers.sh"
 NONINTERACTIVE=0
 UPDATE_MODE=0
 MINIMAL=0
+# Which interactive shell this machine gets. There is no runtime switching any
+# more: you pick once, at install time, and that is the shell you get. bash is
+# the default because it is the login shell on every distro we target and needs
+# no chsh; --shell=zsh is the opt-in that also asks you to run chsh afterwards.
+SHELL_CHOICE=bash
 for arg in "$@"; do
     [[ "$arg" == "--non-interactive" ]] && NONINTERACTIVE=1
     [[ "$arg" == "--update" ]]          && UPDATE_MODE=1
     [[ "$arg" == "--minimal" ]]         && MINIMAL=1
+    [[ "$arg" == "--shell="* ]]         && SHELL_CHOICE="${arg#--shell=}"
 done
+
+case "$SHELL_CHOICE" in
+    bash|zsh) ;;
+    *)
+        echo "Invalid --shell=$SHELL_CHOICE (expected 'bash' or 'zsh')" >&2
+        exit 1
+        ;;
+esac
+
 
 init_common "$@"
 
@@ -56,7 +71,7 @@ init_common "$@"
 STEP_NAMES=("Checking for required tools" "tmux configuration")
 [[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("Nerd fonts" "kitty configuration")
 STEP_NAMES+=("neovim configuration (NvChad)")
-STEP_NAMES+=("zsh configuration" "bash configuration" "Utility scripts")
+STEP_NAMES+=("$SHELL_CHOICE configuration" "Utility scripts")
 [[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("herdr configuration")
 STEP_NAMES+=("oh-my-posh themes" "Verifying installation")
 STEP_TOTAL=${#STEP_NAMES[@]}
@@ -113,10 +128,14 @@ log_step "Checking for required tools"
 # (Wayland-only) and herdr (a graphical-terminal multiplexer). tmux covers
 # multiplexing on a headless box.
 if [[ $MINIMAL -eq 1 ]]; then
-    TOOL_LIST=(tmux nvim zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind pip3)
+    TOOL_LIST=(tmux nvim git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind pip3)
 else
-    TOOL_LIST=(tmux nvim kitty zsh git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr)
+    TOOL_LIST=(tmux nvim kitty git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr)
 fi
+
+# zsh is only installed when it is the shell being configured. bash is always
+# present on the target distros, so it is never in this list.
+[[ "$SHELL_CHOICE" == "zsh" ]] && TOOL_LIST+=(zsh)
 
 # The registry and the install/upgrade loop live in lib/installers.sh so
 # install-packages.sh uses the identical logic. It previously had its own
@@ -277,12 +296,14 @@ fi
 # ============================================================================
 # ZSH + Oh My Zsh + plugins + oh-my-posh
 # ============================================================================
-log_step "zsh configuration"
-
-setup_zsh=true
-if [[ $NONINTERACTIVE -eq 0 ]]; then
-    reply=$(prompt_yn "Set up zsh configuration? [Y/n] " "y")
-    [[ ! "$reply" =~ ^[Yy]$ ]] && setup_zsh=false
+setup_zsh=false
+if [[ "$SHELL_CHOICE" == "zsh" ]]; then
+    log_step "zsh configuration"
+    setup_zsh=true
+    if [[ $NONINTERACTIVE -eq 0 ]]; then
+        reply=$(prompt_yn "Set up zsh configuration? [Y/n] " "y")
+        [[ ! "$reply" =~ ^[Yy]$ ]] && setup_zsh=false
+    fi
 fi
 
 if $setup_zsh; then
@@ -326,29 +347,41 @@ if $setup_zsh; then
             log_error "No .zshrc found at $DOTFILES_DIR/config/zsh/.zshrc"
         fi
 
-        # NOTE: we deliberately do NOT chsh to zsh any more.
+        # Landing in zsh is now a login-shell question, not a runtime one.
         #
-        # bash is the primary interactive shell, and it is already the login
-        # shell on every distro we target — so the correct login shell needs no
-        # change. Which shell you actually land in is decided by
-        # ~/.config/shell/preferred (see config/shell/switch.sh), which the bash
-        # step below seeds to "bash". `shell-toggle` flips it, `tozsh` is a
-        # one-off.
+        # There is no ~/.config/shell/preferred redirect any more: you pick the
+        # shell at install time and that is what you get. So zsh has to actually
+        # be the login shell, which means `chsh`.
+        #
+        # This profile stays sudo-free for the user's own account — `chsh`
+        # prompts for *your* password and cannot run unattended, and running it
+        # under sudo here would silently escalate what an install does. So the
+        # profile does the part that needs root once (registering zsh in
+        # /etc/shells, which chsh refuses without) and then tells you to run the
+        # one-liner yourself.
         #
         # The old code path also appended an `exec zsh` fallback to ~/.bashrc.
-        # That is now actively harmful: ~/.bashrc is a symlink into this repo,
-        # so the append would have written into a tracked file and dirtied the
-        # working tree on every install.
-        #
-        # Make sure zsh is still a valid login shell so `shell-toggle` and
-        # `chsh` work if you decide to flip back manually.
+        # That is actively harmful: ~/.bashrc is a symlink into this repo, so
+        # the append would write into a tracked file and dirty the working tree
+        # on every install.
         zsh_path="$(command -v zsh || true)"
         if [[ -n "$zsh_path" ]] && ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
-            log_info "Registering $zsh_path in /etc/shells (for manual chsh)..."
+            log_info "Registering $zsh_path in /etc/shells (chsh refuses unlisted shells)..."
             run_or_dry sudo bash -c "echo '$zsh_path' >> /etc/shells" <"$TTY_STDIN" \
                 || log_warning "Could not update /etc/shells (non-fatal)"
         fi
-        log_success "zsh configured (bash remains the default — use 'shell-toggle' to switch)"
+
+        # Report whether the login shell already matches, so a re-run on an
+        # already-configured machine stays quiet instead of nagging.
+        _current_login_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+        if [[ -n "$zsh_path" && "$_current_login_shell" == "$zsh_path" ]]; then
+            log_success "zsh configured and is already your login shell"
+        else
+            log_success "zsh configured"
+            log_warning "zsh is not your login shell yet (currently ${_current_login_shell:-unknown})"
+            log_info "  Run this once, then log out and back in:"
+            log_info "    chsh -s $zsh_path"
+        fi
 
         # zsh plugins
         ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
@@ -401,40 +434,15 @@ else
 fi
 
 # ============================================================================
-# BASH (work shell) + bash<->zsh toggle preference
+# BASH
 # ============================================================================
+if [[ "$SHELL_CHOICE" == "bash" ]]; then
 log_step "bash configuration"
 
 if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
     safe_symlink "$DOTFILES_DIR/config/bash/.bashrc"       "$HOME/.bashrc"
     safe_symlink "$DOTFILES_DIR/config/bash/.bash_profile" "$HOME/.bash_profile"
     log_success "bash config linked (.bashrc, .bash_profile)"
-
-    # Seed the shell preference. bash is the primary interactive shell; zsh
-    # stays fully configured and is one `shell-toggle` (or `tozsh`) away.
-    ensure_dir "$HOME/.config/shell"
-    if [[ ! -f "$HOME/.config/shell/preferred" ]]; then
-        if [[ $DRY_RUN -eq 0 ]]; then
-            echo "bash" > "$HOME/.config/shell/preferred"
-        fi
-        log_info "Set default shell preference: bash (run 'shell-toggle' to switch to zsh)"
-    else
-        _existing_pref="$(cat "$HOME/.config/shell/preferred" 2>/dev/null)"
-        if [[ "$_existing_pref" == "bash" ]]; then
-            log_success "shell preference already set: bash"
-        else
-            # Deliberately NOT overwritten: this file is a user choice, and
-            # silently flipping it would be worse than leaving it. But it is
-            # also the single thing that makes every new bash session bounce
-            # into zsh, so reporting it as a plain success (which is what used
-            # to happen) hides the cause of "I can't use bash".
-            log_warning "shell preference is '${_existing_pref:-empty}', not bash"
-            log_info "  Every interactive bash session will exec into ${_existing_pref:-?}."
-            log_info "  To make bash primary:  shell-toggle"
-            log_info "  Or directly:           echo bash > ~/.config/shell/preferred"
-            log_info "  For a one-off session without changing it: tobash"
-        fi
-    fi
 
     # ble.sh — bash's answer to zsh-autosuggestions + zsh-syntax-highlighting.
     # Not in the TOOL_LIST loop above because it is not a binary on PATH; it is
@@ -446,6 +454,7 @@ if [[ -d "$DOTFILES_DIR/config/bash" ]]; then
     fi
 else
     log_error "bash config not found at $DOTFILES_DIR/config/bash"
+fi
 fi
 
 # ============================================================================
@@ -495,7 +504,7 @@ if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
     # If herdr has already run once it will have written its own config.toml,
     # seeding default_shell from whatever $SHELL was at the time. On a machine
     # whose login shell is still zsh that bakes in "/bin/zsh", and every pane
-    # herdr opens is zsh no matter what ~/.config/shell/preferred says — the
+    # herdr opens is zsh regardless of what this install configured — the
     # symlink below fixes it, but only if the file it replaces is noticed.
     # Call it out explicitly, because safe_symlink backs up silently and the
     # symptom (wrong shell in new panes) looks unrelated to this step.
@@ -629,48 +638,36 @@ verify_cmd "rg"           rg
 
 echo ""
 echo "  Shell environment"
-# Oh My Zsh
-if [[ -d "$HOME/.oh-my-zsh" ]]; then verify_ok  "Oh My Zsh installed"
-else                                  verify_fail "Oh My Zsh installed"
+# Oh My Zsh — only relevant when zsh is the configured shell.
+if [[ "$SHELL_CHOICE" == "zsh" ]]; then
+    if [[ -d "$HOME/.oh-my-zsh" ]]; then verify_ok  "Oh My Zsh installed"
+    else                                 verify_fail "Oh My Zsh installed"
+    fi
 fi
 
-# Preferred shell (this, not the login shell, decides where you land —
-# see config/shell/switch.sh).
-pref_file="$HOME/.config/shell/preferred"
-if [[ -r "$pref_file" ]]; then verify_ok "Shell preference" "$(cat "$pref_file")"
-else verify_fail "Shell preference" "unset (will use login shell)"; fi
-
-# Login shell vs preference.
+# Login shell.
 #
-# The preference only redirects *interactive* shells, via the exec in
-# switch.sh. Anything non-interactive — scripts, cron, and tools that read
-# $SHELL to decide what to spawn — still gets the login shell from
-# /etc/passwd. When the two disagree, terminals look correct while everything
-# else quietly uses the other shell.
+# With runtime switching gone, the login shell is the only thing that decides
+# which shell you land in — there is no ~/.config/shell/preferred redirect and
+# no per-terminal override in kitty or herdr any more. So this check is now the
+# whole story rather than one of five competing sources.
 #
-# This bites hardest with terminal multiplexers: herdr writes its own
-# config.toml on first run if none exists, seeding default_shell from the
-# environment. If that happens while the login shell is still zsh, every pane
-# it opens is zsh regardless of this preference.
+# We only report. chsh needs the user's password, so it cannot run unattended,
+# and this profile is deliberately sudo-free for the user's own account so it
+# stays usable on locked-down work machines.
 #
-# We only warn. chsh needs the user's password, so it cannot run unattended,
-# and this profile is deliberately sudo-free so it stays usable on locked-down
-# work machines.
-# $USER is only exported by login shells, so it is unset in a container exec,
-# a systemd unit, or `sudo` without -i — which is fatal under `set -u`. Derive
-# it instead. (This is exactly how the Docker terminal suite caught this.)
+# $USER is only exported by login shells, so it is unset in a container exec, a
+# systemd unit, or `sudo` without -i — which is fatal under `set -u`. Derive it
+# instead. (This is exactly how the Docker terminal suite caught this.)
 _user_name="${USER:-$(id -un)}"
 login_shell="$(getent passwd "$_user_name" 2>/dev/null | cut -d: -f7)"
-pref_shell="$(cat "$pref_file" 2>/dev/null)"
-if [[ -n "$pref_shell" && -n "$login_shell" ]]; then
-    if [[ "$(basename "$login_shell")" == "$pref_shell" ]]; then
-        verify_ok "Login shell matches preference" "$login_shell"
+if [[ -n "$login_shell" ]]; then
+    if [[ "$(basename "$login_shell")" == "$SHELL_CHOICE" ]]; then
+        verify_ok "Login shell" "$login_shell"
     else
-        verify_fail "Login shell" "$login_shell but preference is $pref_shell"
-        log_info "  Interactive shells will still redirect to $pref_shell."
-        log_info "  To align non-interactive contexts too:"
-        log_info "    sudo chsh -s \$(command -v $pref_shell) $_user_name"
-        log_info "  (note the username — 'sudo chsh -s ...' without it changes root's shell)"
+        verify_fail "Login shell" "$login_shell but this install configured $SHELL_CHOICE"
+        log_info "  Run this once, then log out and back in:"
+        log_info "    chsh -s \$(command -v $SHELL_CHOICE)"
     fi
 fi
 
@@ -710,7 +707,7 @@ log_info "Next steps:"
 [[ -L "$HOME/.tmux.conf" ]] && echo "  • Start tmux and press Ctrl+Space + I to install plugins"
 [[ -L "$HOME/.config/herdr/config.toml" ]] && echo "  • Launch herdr with 'herdr' — prefix is Ctrl+Space (mirrors tmux bindings)"
 [[ -d "$HOME/.config/nvim" ]] && echo "  • Open a NEW terminal, then run 'nvim' to bootstrap plugins"
-[[ -L "$HOME/.bashrc" ]] && echo "  • Open a new terminal to activate bash + oh-my-posh ('shell-toggle' for zsh)"
+echo "  • Open a new terminal to activate $SHELL_CHOICE + oh-my-posh"
 echo ""
 log_warning "IMPORTANT: Open a new terminal before running nvim — the correct nvim from ~/.local/bin must be in PATH"
 echo ""

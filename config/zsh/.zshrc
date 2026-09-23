@@ -11,7 +11,6 @@ export DOTFILES="${${(%):-%x}:A:h:h:h}"
 # and sourced at the bottom of this file. Never hardcode them here.
 
 # --- Shell preference / bash<->zsh toggle (may exec away) -------------------
-source "$DOTFILES/config/shell/switch.sh"
 
 # --- History ----------------------------------------------------------------
 export HISTSIZE=10000

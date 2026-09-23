@@ -73,16 +73,16 @@ echo "neovim:"
 assert_dir  "$HOME/.config/nvim"
 assert_file "$HOME/.config/nvim/init.lua"
 
-# ── bash (primary interactive shell) ─────────────────────────────────────────
+# ── bash (the shell this suite installs with, i.e. --shell=bash) ─────────────
 echo "bash:"
 assert_symlink "$HOME/.bashrc"       "$DOTFILES/config/bash/.bashrc"
 assert_symlink "$HOME/.bash_profile" "$DOTFILES/config/bash/.bash_profile"
-assert_file    "$HOME/.config/shell/preferred"
-# bash must be the seeded default; a regression here silently drops you into zsh.
-if [[ "$(cat "$HOME/.config/shell/preferred" 2>/dev/null)" == "bash" ]]; then
-    pass "shell preference is bash"
+# There is no ~/.config/shell/preferred any more — the shell is chosen at
+# install time via --shell and applied with chsh, so its absence is correct.
+if [[ ! -e "$HOME/.config/shell/preferred" ]]; then
+    pass "no stale shell-preference file"
 else
-    fail "shell preference is bash (got: $(cat "$HOME/.config/shell/preferred" 2>/dev/null || echo unset))"
+    fail "no stale shell-preference file (found $HOME/.config/shell/preferred)"
 fi
 # The .bashrc must be syntactically valid and load without emitting errors —
 # this is what catches things like sourcing a zsh-only completion file.
@@ -92,18 +92,20 @@ else
     fail ".bashrc parses"
 fi
 
-# ── zsh (still available via shell-toggle) ───────────────────────────────────
-echo "zsh:"
-assert_symlink "$HOME/.zshrc" "$DOTFILES/config/zsh/.zshrc"
-assert_dir     "$HOME/.oh-my-zsh"
-assert_dir     "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
-assert_dir     "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+# ── zsh must NOT be configured on a --shell=bash install ─────────────────────
+# The whole point of the split is that one shell is installed, not both. A
+# .zshrc symlink here means the bash path is still doing zsh work.
+echo "zsh (expected absent):"
+if [[ ! -L "$HOME/.zshrc" ]]; then
+    pass ".zshrc not linked on a bash install"
+else
+    fail ".zshrc not linked on a bash install"
+fi
 
 # ── shared shell layer ────────────────────────────────────────────────────────
 echo "shared shell layer:"
 assert_file "$DOTFILES/config/shell/env.sh"
 assert_file "$DOTFILES/config/shell/aliases.sh"
-assert_file "$DOTFILES/config/shell/switch.sh"
 assert_file "$DOTFILES/config/shell/docker_functions.bash"
 
 # ── terminfo ──────────────────────────────────────────────────────────────────

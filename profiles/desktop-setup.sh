@@ -61,6 +61,13 @@ fi
 PASSTHROUGH_FLAGS=()
 [[ $DRY_RUN -eq 1 ]] && PASSTHROUGH_FLAGS+=("--dry-run")
 
+# --shell is chosen by install.sh (or passed directly) and forwarded verbatim to
+# terminal-setup.sh, which is what actually configures a shell.
+SHELL_FLAG=()
+for _a in "$@"; do
+    [[ "$_a" == "--shell="* ]] && SHELL_FLAG=("$_a")
+done
+
 bash "$BASE_SCRIPT" "${PASSTHROUGH_FLAGS[@]}"
 log_success "Base tools installed"
 
@@ -74,7 +81,7 @@ if [[ ! -f "$MINIMAL_SCRIPT" ]]; then
     exit 1
 fi
 
-MINIMAL_FLAGS=("--non-interactive" "${PASSTHROUGH_FLAGS[@]}")
+MINIMAL_FLAGS=("--non-interactive" "${PASSTHROUGH_FLAGS[@]}" "${SHELL_FLAG[@]+"${SHELL_FLAG[@]}"}")
 bash "$MINIMAL_SCRIPT" "${MINIMAL_FLAGS[@]}"
 log_success "Terminal configured"
 
@@ -145,7 +152,7 @@ $install_kde && echo "  + KDE Plasma customisations" || true
 $install_bar && echo "  + polybar top bar with Spotify controls" || true
 echo ""
 log_info "Next steps:"
-echo "  • Open a new terminal to load bash (run 'shell-toggle' to switch to zsh)"
+echo "  • Open a new terminal to load your configured shell"
 echo "  • Start tmux and press Ctrl+Space + I to install tmux plugins"
 echo "  • Run 'nvim' to bootstrap NvChad plugins"
 $install_kde && echo "  • Log out and back in to apply KDE changes" || true

@@ -31,7 +31,7 @@ snapshot() {
     {
         for p in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" \
                  "$HOME/.tmux.conf" "$HOME/.config/tmux" "$HOME/.config/kitty" \
-                 "$HOME/.config/herdr/config.toml" "$HOME/.config/shell/preferred" \
+                 "$HOME/.config/herdr/config.toml" \
                  "$HOME/.config/oh-my-posh/current.omp.json"; do
             if [[ -L "$p" ]]; then
                 echo "$p -> $(readlink "$p")"

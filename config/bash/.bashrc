@@ -1,8 +1,9 @@
 # ~/.bashrc — interactive bash configuration.
 #
-# Bash is the PRIMARY interactive shell for this setup. Shell-agnostic pieces
-# live in $DOTFILES/config/shell/*.sh and are shared with zsh, which remains
-# fully configured and reachable via `tozsh` / `shell-toggle`.
+# The interactive shell is chosen once, at install time, via
+# `terminal-setup.sh --shell=bash|zsh` and applied with chsh. There is no
+# runtime switching. Shell-agnostic pieces live in $DOTFILES/config/shell/*.sh
+# and are shared with the zsh config.
 
 # Interactive shells only.
 case $- in *i*) ;; *) return;; esac
@@ -14,7 +15,6 @@ export DOTFILES="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/../.. &&
 # and sourced at the bottom of this file. Never hardcode them here.
 
 # --- Shell preference / bash<->zsh toggle (may exec away) -------------------
-source "$DOTFILES/config/shell/switch.sh"
 
 # --- ble.sh (load early, attach last) ---------------------------------------
 # ble.sh is the Bash Line Editor — it replaces readline and is the only real

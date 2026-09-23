@@ -117,6 +117,9 @@ log_step "Configuring shell environment"
 # the tool-install list, but still installs nvim/tmux/fzf/eza/zoxide/glow at
 # their pinned versions and links every config.
 flags=(--minimal)
+for _a in "$@"; do
+    [[ "$_a" == "--shell="* ]] && flags+=("$_a")
+done
 [[ $NONINTERACTIVE -eq 1 ]] && flags+=(--non-interactive)
 [[ $UPDATE_MODE   -eq 1 ]] && flags+=(--update)
 [[ $DRY_RUN       -eq 1 ]] && flags+=(--dry-run)
@@ -127,7 +130,7 @@ echo ""
 log_success "VM setup complete"
 echo ""
 echo "  Next steps:"
-echo "  • Open a new shell (bash is the default; 'shell-toggle' switches to zsh)"
+echo "  • Open a new shell to pick up the new configuration"
 echo "  • Start tmux and press Ctrl+Space + I to install tmux plugins"
 echo "  • Launch nvim once to let lazy.nvim sync plugins"
 echo ""

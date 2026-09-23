@@ -40,7 +40,7 @@ echo ""
 echo "Select a profile:"
 echo ""
 echo "  1) Terminal Setup"
-echo "     Configure tmux, kitty, neovim, bash/zsh"
+echo "     Configure tmux, kitty, neovim, and your chosen shell"
 echo "     No sudo required — links configs from this repo"
 echo ""
 echo "  2) Desktop Setup  (Ubuntu/Debian only)"
@@ -81,7 +81,32 @@ run_profile() {
     fi
     local flags=()
     [[ $DRY_RUN -eq 1 ]] && flags+=("--dry-run")
+    [[ -n "${SHELL_CHOICE:-}" ]] && flags+=("--shell=$SHELL_CHOICE")
     bash "$script" "${flags[@]}"
+}
+
+# Which interactive shell this machine gets.
+#
+# This is a one-time, install-time decision: the chosen shell is the only one
+# configured, and it becomes the login shell. There is no runtime toggle — the
+# old ~/.config/shell/preferred redirect is gone, because having five different
+# places that could each claim to decide your shell is what made "I am in zsh
+# but bash keeps starting" possible.
+choose_shell() {
+    echo ""
+    echo "Which interactive shell should this machine use?"
+    echo ""
+    echo "  1) bash  — workstation / work machines (already the login shell, no chsh needed)"
+    echo "  2) zsh   — personal machines (oh-my-zsh + plugins; asks you to run chsh at the end)"
+    echo ""
+    local pick
+    read -rp "Shell [1-2, default 1]: " -n 1 pick </dev/tty || true
+    echo ""
+    case "$pick" in
+        2) SHELL_CHOICE=zsh ;;
+        *) SHELL_CHOICE=bash ;;
+    esac
+    log_info "Configuring $SHELL_CHOICE"
 }
 
 case "$choice" in
@@ -92,6 +117,7 @@ case "$choice" in
         echo ""
         reply=$(prompt_yn "Continue? [y/N] " "n")
         if [[ "$reply" =~ ^[Yy]$ ]]; then
+            choose_shell
             run_profile terminal-setup.sh
         else
             log_info "Cancelled."
@@ -109,6 +135,7 @@ case "$choice" in
         echo ""
         reply=$(prompt_yn "Continue? [y/N] " "n")
         if [[ "$reply" =~ ^[Yy]$ ]]; then
+            choose_shell
             run_profile desktop-setup.sh
         else
             log_info "Cancelled."
@@ -126,6 +153,7 @@ case "$choice" in
         echo ""
         reply=$(prompt_yn "Continue? [y/N] " "n")
         if [[ "$reply" =~ ^[Yy]$ ]]; then
+            choose_shell
             run_profile vm-setup.sh
         else
             log_info "Cancelled."
