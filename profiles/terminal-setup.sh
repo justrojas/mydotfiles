@@ -46,12 +46,20 @@ done
 init_common "$@"
 
 # Total number of log_step calls in this script — drives the X/N counter.
-# --minimal skips 3 of them (Nerd fonts, kitty config, herdr).
-if [[ $MINIMAL -eq 1 ]]; then
-    STEP_TOTAL=8
-else
-    STEP_TOTAL=11
-fi
+#
+# This used to be a hand-maintained `8 vs 11` if/else, which had to be edited in
+# both branches every time a log_step was added or removed. With --shell on top
+# of --minimal the combinations become a matrix, so the count is derived from a
+# declarative registry instead: list the steps that will actually run, then take
+# its length. tests/test-step-total.sh asserts this registry stays in sync with
+# the real log_step calls, so drift is caught rather than silently miscounted.
+STEP_NAMES=("Checking for required tools" "tmux configuration")
+[[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("Nerd fonts" "kitty configuration")
+STEP_NAMES+=("neovim configuration (NvChad)")
+STEP_NAMES+=("zsh configuration" "bash configuration" "Utility scripts")
+[[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("herdr configuration")
+STEP_NAMES+=("oh-my-posh themes" "Verifying installation")
+STEP_TOTAL=${#STEP_NAMES[@]}
 
 # ============================================================================
 # PATH — adopt the same PATH an interactive shell will have
@@ -360,29 +368,36 @@ if $setup_zsh; then
                 fi
             done
         fi
-
-        # oh-my-posh
-        if [[ -x "$HOME/.local/bin/oh-my-posh" ]]; then
-            log_success "oh-my-posh already installed ($("$HOME/.local/bin/oh-my-posh" --version))"
-        else
-            log_info "Installing oh-my-posh..."
-            ensure_dir "$HOME/.local/bin"
-            if [[ $DRY_RUN -eq 0 ]]; then
-                # oh-my-posh installer requires unzip
-                if ! command -v unzip >/dev/null 2>&1; then
-                    sudo apt-get install -y unzip >/dev/null 2>&1 || true
-                fi
-                # `|| true` keeps a transient network failure from aborting the
-                # whole run, but the result MUST then be verified — otherwise a
-                # failed download is reported as a successful install.
-                curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin" || true
-            else
-                log_info "[DRY RUN] Would install oh-my-posh to ~/.local/bin"
-            fi
-            _confirm_install oh-my-posh "oh-my-posh" \
-                || log_warning "oh-my-posh missing — prompt will fall back to plain PS1"
-        fi
     fi
+fi
+
+# ----------------------------------------------------------------------------
+# oh-my-posh (shell-agnostic — both .bashrc and .zshrc init it)
+# ----------------------------------------------------------------------------
+# This used to live inside the `if $setup_zsh` / `command -v zsh` branch above,
+# which meant a bash-only run installed no oh-my-posh binary at all: the theme
+# step further down would then link themes for a missing executable and
+# `.bashrc`'s `oh-my-posh init bash` would silently fall through to a plain
+# PS1. It is needed by both shells, so it is installed unconditionally.
+if [[ -x "$HOME/.local/bin/oh-my-posh" ]]; then
+    log_success "oh-my-posh already installed ($("$HOME/.local/bin/oh-my-posh" --version))"
+else
+    log_info "Installing oh-my-posh..."
+    ensure_dir "$HOME/.local/bin"
+    if [[ $DRY_RUN -eq 0 ]]; then
+        # oh-my-posh installer requires unzip
+        if ! command -v unzip >/dev/null 2>&1; then
+            sudo apt-get install -y unzip >/dev/null 2>&1 || true
+        fi
+        # `|| true` keeps a transient network failure from aborting the
+        # whole run, but the result MUST then be verified — otherwise a
+        # failed download is reported as a successful install.
+        curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin" || true
+    else
+        log_info "[DRY RUN] Would install oh-my-posh to ~/.local/bin"
+    fi
+    _confirm_install oh-my-posh "oh-my-posh" \
+        || log_warning "oh-my-posh missing — prompt will fall back to plain PS1"
 fi
 
 # ============================================================================
