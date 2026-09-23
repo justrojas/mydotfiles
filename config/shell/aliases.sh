@@ -60,3 +60,14 @@ if [ "$TERM" = "xterm-kitty" ] && command -v kitten >/dev/null 2>&1; then
     alias ssh='kitten ssh'
 fi
 
+# --- Functions ----------------------------------------------------------------
+# Shell-agnostic, so it lives here rather than being reimplemented per shell.
+# It previously existed twice — in .bashrc and .zshrc — with divergent quoting
+# and error handling; the bash version's guards are the ones kept.
+if command -v fzf >/dev/null 2>&1; then
+    fcd() {  # fuzzy-jump to the directory of a selected file
+        local file
+        file=$(find . -type f 2>/dev/null | fzf --query="${1:-}" +m) || return
+        [ -n "$file" ] && cd "$(dirname "$file")"
+    }
+fi

@@ -67,13 +67,6 @@ source "$DOTFILES/config/shell/aliases.sh"
 # --- Work-specific (untracked) ---------------------------------------------
 [ -f ~/.bashrc.work ] && source ~/.bashrc.work
 
-# --- Functions --------------------------------------------------------------
-fcd() {  # fuzzy-jump to the directory of a selected file
-    local file
-    file=$(find . -type f 2>/dev/null | fzf --query="${1:-}" +m) || return
-    [ -n "$file" ] && cd "$(dirname "$file")"
-}
-
 # --- fzf --------------------------------------------------------------------
 # Ctrl-R history search, Ctrl-T file widget, Alt-C dir jump.
 if [ -f ~/.fzf/shell/key-bindings.bash ]; then

@@ -35,13 +35,6 @@ source "$ZSH/oh-my-zsh.sh"
 # --- Options ----------------------------------------------------------------
 setopt AUTO_CD AUTO_PUSHD PUSHD_IGNORE_DUPS PUSHD_MINUS
 
-# --- Functions --------------------------------------------------------------
-fcd() {  # fuzzy-jump to the directory of a selected file
-    local file
-    file=$(find . -type f | fzf --query="$1" +m)
-    [[ -n "$file" ]] && cd "$(dirname "$file")"
-}
-
 # --- Keybindings ------------------------------------------------------------
 open_nvim()     { nvim . }
 open_opencode() { opencode }
