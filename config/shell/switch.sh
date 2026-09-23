@@ -14,6 +14,18 @@
 
 _shell_pref_file="${XDG_CONFIG_HOME:-$HOME/.config}/shell/preferred"
 
+# Restore the terminal before exec'ing away. ble.sh (bash's line editor) puts
+# the terminal into application-keymap / bracketed-paste / custom-keymap modes
+# on attach and only cleans up via its bash EXIT trap — which exec() never
+# fires. Without this, switching bash(+ble) -> zsh leaves ble's terminal state
+# behind (stray suggestions/keymap artifacts). Guarded on BLE_VERSION so it's a
+# no-op in zsh and in bash without ble.
+_shell_predetach() {
+    if [ -n "${BLE_VERSION:-}" ] && command -v ble-detach >/dev/null 2>&1; then
+        ble-detach 2>/dev/null || true
+    fi
+}
+
 # Which shell is running this file right now?
 if [ -n "${ZSH_VERSION:-}" ]; then
     _shell_current=zsh
@@ -35,6 +47,7 @@ shell-toggle() {
     printf '%s\n' "$target" > "$_shell_pref_file"
     printf 'Preferred shell -> %s (switching now)\n' "$target"
     unset SHELL_SWITCH_GUARD
+    _shell_predetach
     exec "$target" -l
 }
 
@@ -44,8 +57,8 @@ shell-toggle() {
 # session started *directly* in the preferred shell (login shell, `kitty --shell
 # zsh`, herdr `default_shell`, etc.) never set the guard, so `tobash` would exec
 # bash, which would then re-exec straight back into zsh — leaving you stuck.
-tobash() { export SHELL_SWITCH_GUARD=1; exec bash -l; }
-tozsh()  { export SHELL_SWITCH_GUARD=1; exec zsh -l; }
+tobash() { export SHELL_SWITCH_GUARD=1; _shell_predetach; exec bash -l; }
+tozsh()  { export SHELL_SWITCH_GUARD=1; _shell_predetach; exec zsh -l; }
 
 # Show current + preferred.
 shell-pref() {
@@ -61,6 +74,7 @@ case $- in
             if [ -n "$_shell_pref" ] && [ "$_shell_pref" != "$_shell_current" ] \
                && command -v "$_shell_pref" >/dev/null 2>&1; then
                 export SHELL_SWITCH_GUARD=1
+                _shell_predetach
                 exec "$_shell_pref" -l
             fi
         fi
