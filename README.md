@@ -85,12 +85,9 @@ tmux
 nvim
 ```
 
-**shell** — open a new terminal. bash is the default; zsh is one command away:
-```
-shell-toggle    # flip the persistent preference and switch now
-tozsh / tobash  # one-off switch, preference unchanged
-shell-pref      # show current + preferred
-```
+**shell** — open a new terminal. The shell you configured at install time is
+your login shell, so there is nothing to switch. If you chose zsh, run the
+`chsh` line the installer printed and log out and back in once.
 
 ## Tmux keybindings
 
@@ -173,12 +170,22 @@ Building it needs **gawk** (the build rejects Ubuntu's default mawk) and
 > completing the shared prefix — that feels like completion is broken. Shift-Tab
 > cycles if you want that behaviour.
 
-### Switching shells
+### Which shell you get
 
-The shell you land in is decided by `~/.config/shell/preferred`, **not** by
-your login shell. Every interactive shell reads it on startup and re-execs
-toward it (loop-guarded). This means new terminals, tmux panes and herdr panes
-all agree, without needing `chsh`.
+Your login shell, and nothing else. It is chosen once, when you install:
+
+```bash
+bash profiles/terminal-setup.sh --shell=bash    # workstation (default)
+bash profiles/terminal-setup.sh --shell=zsh     # personal machine
+```
+
+Only the shell you pick is configured — a `--shell=bash` install does not
+create `~/.zshrc` or install Oh My Zsh, and does not add zsh to the tool list.
+
+There is deliberately no runtime toggle. kitty and herdr do **not** set a shell
+directive, so they inherit the login shell and cannot contradict it. This
+replaced an arrangement where five different things each claimed to decide your
+shell, which failed silently whenever they disagreed.
 
 ## Top bar
 
@@ -274,10 +281,9 @@ my-dotfiles/
 │   ├── shell/                      # shared by BOTH bash and zsh
 │   │   ├── env.sh                  # PATH, EDITOR, TERM sanity check
 │   │   ├── aliases.sh              # guarded aliases (degrade if tool absent)
-│   │   ├── switch.sh               # bash<->zsh preference + toggle
 │   │   └── docker_functions.bash   # lazy-loaded docker helpers
 │   ├── bash/
-│   │   ├── .bashrc                 # symlinked to ~/.bashrc  (default shell)
+│   │   ├── .bashrc                 # symlinked to ~/.bashrc  (--shell=bash)
 │   │   └── .bash_profile           # symlinked to ~/.bash_profile
 │   ├── zsh/
 │   │   ├── .zshrc                  # symlinked to ~/.zshrc
@@ -393,44 +399,36 @@ All `scripts/utilities/*.sh` are symlinked into `~/.local/bin` by
 | Command | What it does |
 |---|---|
 | `kt` | kitty theme switcher (see above) |
-| `shell-doctor.sh` | Explain why a terminal opened the shell it did |
 | `active-window-border.sh` | Start/stop the focus ring around the active window (X11) |
 | `ssh_gen.sh` | Interactive SSH key generator, copies the pubkey to the clipboard |
 | `firefox_fix.sh <url>` | Open a URL in a new Firefox window, optionally fullscreen |
 | `claude_launcher.sh` | `firefox_fix.sh https://claude.ai/new` |
 | `drive.sh` | Mount OneDrive via rclone. **Requires `rclone`, which no profile installs.** |
 
-### Which shell will a terminal open?
+### A machine is opening the wrong shell
 
-Five independent things decide this, and they fail silently when they
-disagree — the symptom ("my terminal opens zsh") looks nothing like the cause:
-
-1. the login shell in `/etc/passwd` — used by everything non-interactive
-2. `~/.config/shell/preferred` — `switch.sh` redirects *interactive* shells only
-3. kitty's `shell` directive in `kitty.conf`
-4. herdr's `default_shell` in `config.toml`
-5. `$SHELL` in the running process, which is inherited and may be stale
-
-Both kitty and herdr **write their own config on first run** if none exists,
-and herdr seeds `default_shell` from `$SHELL` at that moment. Install the
-dotfiles on a machine whose login shell is still zsh, open herdr once before
-running setup, and every pane it opens is zsh forever after — regardless of
-what `preferred` says.
+Since the shell is the login shell, there is only one thing to check:
 
 ```bash
-shell-doctor.sh     # prints all five at once and flags the mismatches
+getent passwd "$USER" | cut -d: -f7
 ```
 
-Fixing a machine that opens the wrong shell:
+If that disagrees with what you installed, align it and open a *new* terminal —
+a running shell keeps whatever it started with:
 
 ```bash
-bash profiles/terminal-setup.sh --non-interactive   # re-link kitty + herdr configs
-sudo chsh -s "$(command -v bash)" "$USER"           # align the login shell
+chsh -s "$(command -v zsh)"     # or bash
 ```
 
-Note the username on `chsh`: `sudo chsh -s /bin/bash` without it changes
-**root's** shell, not yours. Then open a *new* terminal — a running shell keeps
-whatever it started with.
+Two caveats. `chsh` refuses a shell that is not listed in `/etc/shells`; the
+zsh path registers it for you. And `sudo chsh -s /bin/zsh` **without** a
+username changes root's shell, not yours — either drop the `sudo` or pass
+`"$USER"` explicitly.
+
+Note that kitty and herdr both write their own config on first run if none
+exists, and older versions of this repo pinned a shell in each. If a machine
+still has those files as regular files rather than symlinks into this repo,
+re-run `terminal-setup.sh` so they get re-linked.
 
 ### Active window outline
 

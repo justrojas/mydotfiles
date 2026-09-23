@@ -42,13 +42,12 @@ my-dotfiles/
 │   ├── shell/                  # SHARED between bash and zsh — put agnostic code here
 │   │   ├── env.sh              # PATH, EDITOR, TERM_PROGRAM, $TERM sanity check
 │   │   ├── aliases.sh          # All aliases guarded by `command -v`
-│   │   ├── switch.sh           # bash<->zsh preference; sourced early, may exec away
 │   │   └── docker_functions.bash
 │   ├── bash/
 │   │   ├── .bashrc             # DEFAULT shell (lazy NVM/kubectl, fzf, readline binds)
 │   │   └── .bash_profile
 │   ├── zsh/
-│   │   ├── .zshrc              # Kept at parity with bash; reached via shell-toggle
+│   │   ├── .zshrc              # Linked only by --shell=zsh installs
 │   │   └── oh-my-posh.omp.json # Legacy prompt theme
 │   ├── oh-my-posh/
 │   │   ├── tokyonight_storm.omp.json
@@ -145,7 +144,6 @@ must update both branches of that conditional.**
 
 Non-symlinked state:
 ```bash
-~/.config/shell/preferred          # "bash" or "zsh" — decides which shell you get
 ~/.terminfo/                       # compiled xterm-kitty entry
 ~/.config/autostart/polybar.desktop
 ```
@@ -186,18 +184,32 @@ the two rc files, they will drift.
 
 ### Which shell you get
 
-Decided by `~/.config/shell/preferred` (seeded to `bash` by terminal-setup),
-NOT by the login shell. `config/shell/switch.sh` is sourced early by both rc
-files and re-execs toward the preference, loop-guarded via `SHELL_SWITCH_GUARD`.
-This keeps new terminals, tmux panes and herdr panes consistent without `chsh`.
+The login shell, and nothing else. It is chosen at install time:
 
-- `shell-toggle` — flip the preference and switch now
-- `tobash` / `tozsh` — one-off switch, preference unchanged
-- `shell-pref` — print current + preferred
+```bash
+bash profiles/terminal-setup.sh --shell=bash|zsh
+```
 
-Do NOT add a `chsh`/`usermod` step or an `exec zsh` line to an rc file. The rc
-files are symlinks into this repo, so appending to them dirties the working
-tree on every install.
+Only the selected shell is configured: `--shell=bash` does not link `.zshrc`,
+does not install Oh My Zsh or its plugins, and drops `zsh` from `TOOL_LIST`.
+`STEP_NAMES` varies with the flag, so `STEP_TOTAL` is derived rather than
+hand-maintained; `tests/test-step-total.sh` guards that.
+
+There is no runtime switching. `config/shell/switch.sh`, `shell-toggle`,
+`tobash`/`tozsh`, `SHELL_SWITCH_GUARD`, `~/.config/shell/preferred` and
+`shell-doctor.sh` were all removed — they existed to manage disagreement
+between five competing sources of truth, which no longer exist.
+
+Rules that still apply:
+
+- kitty and herdr must NOT set a shell directive. They inherit the login
+  shell; setting one reintroduces a second source of truth.
+- Do NOT append an `exec zsh` line to an rc file. The rc files are symlinks
+  into this repo, so appending dirties the working tree on every install.
+- The zsh path registers zsh in `/etc/shells` and then *tells the user* to run
+  `chsh` themselves. Do not run `chsh` or `usermod` from the profile: `chsh`
+  needs the user's own password, and the profile is deliberately sudo-free for
+  the user's account.
 
 ### ble.sh (bash only)
 
@@ -207,7 +219,7 @@ highlighting (zsh-syntax-highlighting equivalent).
 
 Load order is load-bearing and easy to break:
 
-1. **Top of `.bashrc`**, right after `switch.sh`:
+1. **Top of `.bashrc`**, guarded on an interactive shell:
    `source ~/.local/share/blesh/ble.sh --attach=none`
 2. **Very last statement of `.bashrc`**: `ble-attach`, inside `if [[ ${BLE_VERSION-} ]]`
 
@@ -460,7 +472,7 @@ tmux source ~/.tmux.conf
 # Ctrl+Shift+F5 inside kitty
 
 # Reload the shell
-exec bash        # or: shell-toggle / tozsh
+exec "$SHELL" -l
 
 # Update Oh My Zsh + plugins
 omz update
