@@ -97,7 +97,7 @@ description = "open lazygit"
 # Theme
 # =============================================================================
 [theme]
-name = "tokyo-night"
+name = "kanagawa"
 # Don't follow the system light/dark preference — the terminal, bar and prompt
 # are all pinned to a dark palette, so auto-switching would desync them.
 auto_switch = false
