@@ -131,6 +131,9 @@ toggle_window_floating=Meta+N
 [chatgpt.sh-3.desktop][Global Shortcuts]
 _launch=Meta+C
 
+[firefox.desktop][Global Shortcuts]
+_launch=Meta+Z
+
 [firefox_fix.sh.desktop][Global Shortcuts]
 _launch=Meta+F
 
@@ -331,7 +334,7 @@ view_zoom_out=
 [lattedock][Global Shortcuts]
 activate entry 1=
 activate entry 10=
-activate entry 11=Meta+Z
+activate entry 11=
 activate entry 12=Meta+X
 activate entry 13=
 activate entry 14=Meta+V
