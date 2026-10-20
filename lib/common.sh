@@ -6,12 +6,19 @@
 # GLOBAL VARIABLES
 # ============================================================================
 
-# Color codes for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m' # No Color
+# Color codes for output. Empty when stdout is not a terminal or NO_COLOR is
+# set (https://no-color.org), so logs and CI output carry no escape codes.
+# Guarded so a second `source` (profiles source each other) does not trip
+# readonly.
+if [[ -z "${_DOTFILES_COLORS_SET:-}" ]]; then
+    _DOTFILES_COLORS_SET=1
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        readonly RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' BLUE='\033[0;34m'
+        readonly CYAN='\033[0;36m' MAGENTA='\033[0;35m' BOLD='\033[1m' DIM='\033[2m' NC='\033[0m'
+    else
+        readonly RED='' GREEN='' YELLOW='' BLUE='' CYAN='' MAGENTA='' BOLD='' DIM='' NC=''
+    fi
+fi
 
 # Dry run mode (set to 1 to preview changes without executing)
 DRY_RUN=${DRY_RUN:-0}
@@ -23,32 +30,44 @@ readonly BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 # LOGGING FUNCTIONS
 # ============================================================================
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
+# Layout matches the `dotfiles` CLI (cli/dotfiles.py) and the team's rich-based
+# tools: dim time, a fixed-width dim level, then the message.
+#
+#   14:02:11 INFO     Linking tmux config
+#   14:02:12 WARNING  ~/.tmux.conf exists, backed up
+#
+# cli/dotfiles.py parses WARNING / ERROR and the step lines below out of the
+# install transcript for its summary panel — keep those tokens stable.
+_log() {
+    local color="$1" level="$2"; shift 2
+    printf "${DIM}%s${NC} ${color}%-8s${NC} %b\n" "$(date +%H:%M:%S)" "$level" "$*"
 }
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $*"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $*"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*" >&2
-}
+log_info()    { _log "${DIM}${BLUE}"  INFO    "$*"; }
+log_success() { _log "${GREEN}"       OK      "$*"; }
+log_warning() { _log "${YELLOW}"      WARNING "$*"; }
+log_error()   { _log "${RED}"         ERROR   "$*" >&2; }
 
 STEP_NUM=0
 STEP_TOTAL=0  # Set this in the calling script for "X/N" display
 
+# Profile header, printed once at the top of each profile:
+#
+#   Terminal  tmux · kitty · neovim · shell
+#   ────────────────────────────────────────
+log_banner() {
+    local title="$1" sub="${2:-}"
+    echo ""
+    echo -e "${BOLD}${MAGENTA}${title}${NC}  ${DIM}${sub}${NC}"
+    echo -e "${DIM}$(printf '─%.0s' $(seq 1 $(( ${#title} + ${#sub} + 2 ))))${NC}"
+}
+
+# A step header reads as a section break:   ── [3/10] Installing tmux
 log_step() {
     (( STEP_NUM++ )) || true
-    if [[ $STEP_TOTAL -gt 0 ]]; then
-        echo -e "\n${GREEN}==> [${STEP_NUM}/${STEP_TOTAL}]${NC} ${BLUE}$*${NC}"
-    else
-        echo -e "\n${GREEN}==>${NC} ${BLUE}$*${NC}"
-    fi
+    local counter=""
+    [[ $STEP_TOTAL -gt 0 ]] && counter="${YELLOW}[${STEP_NUM}/${STEP_TOTAL}]${NC} "
+    echo -e "\n${DIM}──${NC} ${counter}${BOLD}${CYAN}$*${NC}"
 }
 
 # ============================================================================
@@ -349,17 +368,25 @@ setup_error_handling() {
 # INITIALIZATION
 # ============================================================================
 
-# Initialize common settings
+# Initialize common settings.
+#
+# Runs twice in most scripts: once automatically when this file is sourced
+# (below) and again when the script calls it explicitly with its own "$@".
+# Both are kept — the explicit call is what sees the script's real arguments —
+# but the dry-run notice is printed once per install, not once per call and
+# again in every child profile. The guard is exported so desktop-setup.sh's
+# nested terminal/kde runs stay quiet too.
 init_common() {
-    # Parse --dry-run flag
     for arg in "$@"; do
         if [[ "$arg" == "--dry-run" ]]; then
             DRY_RUN=1
-            log_warning "Running in DRY RUN mode - no changes will be made"
+            if [[ -z "${DOTFILES_DRY_RUN_ANNOUNCED:-}" ]]; then
+                log_warning "Dry run — no changes will be made"
+                export DOTFILES_DRY_RUN_ANNOUNCED=1
+            fi
         fi
     done
 
-    # Set up error handling
     setup_error_handling
 }
 

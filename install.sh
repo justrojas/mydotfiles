@@ -2,7 +2,10 @@
 # Dotfiles Installation — interactive menu
 # Delegates to profiles/ scripts based on user choice.
 #
-# Usage: bash install.sh [--dry-run]
+# Usage: bash install.sh [--dry-run] [--plain]
+#
+# Opens the `dotfiles` CLI (cli/dotfiles.py) when python+click+rich or uv is
+# available; otherwise, or with --plain, the bash menu below.
 
 set -euo pipefail
 
@@ -13,6 +16,27 @@ source "$DOTFILES_DIR/lib/common.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
 
 init_common "$@"
+
+# ============================================================================
+# Prefer the `dotfiles` CLI (cli/dotfiles.py: click + rich) when it can run.
+#
+# It shows the same profiles as a table with system/repo status, records a
+# transcript of each run and ends with a summary. It needs python3 with
+# click + rich, or uv; on a bare box with neither, the launcher exits 127 and
+# we fall through to the plain bash menu below. --plain forces the bash menu,
+# and the CLI is skipped when stdin/stdout are not terminals (`echo 1 | ...`).
+# ============================================================================
+if [[ " $* " != *" --plain "* && -t 0 && -t 1 ]]; then
+    cli_args=()
+    [[ $DRY_RUN -eq 1 ]] && cli_args+=(--dry-run)
+    rc=0
+    "$DOTFILES_DIR/cli/dotfiles" "${cli_args[@]+"${cli_args[@]}"}" || rc=$?
+    if [[ $rc -ne 127 ]]; then
+        trap - EXIT   # the CLI already reported; don't add "Script failed"
+        exit "$rc"
+    fi
+    log_info "dotfiles CLI unavailable — using the plain menu"
+fi
 
 # ============================================================================
 # OS detection (informational only — profiles enforce their own requirements)

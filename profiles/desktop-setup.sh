@@ -38,14 +38,8 @@ check_internet
 # ============================================================================
 # Banner
 # ============================================================================
-echo ""
-echo "======================================"
-echo "  Desktop Setup"
-echo "  Packages + Terminal + Optional KDE"
-echo "======================================"
-echo ""
+log_banner "Desktop" "packages · terminal · optional KDE"
 [[ $NONINTERACTIVE -eq 1 ]] && log_info "Running non-interactively"
-[[ $DRY_RUN -eq 1 ]]        && log_warning "Dry-run mode — no changes will be made"
 echo ""
 
 # ============================================================================

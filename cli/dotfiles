@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# dotfiles — launcher for cli/dotfiles.py.
+#
+# Picks the cheapest interpreter that can run it:
+#   1. system python3 that already has click + rich (no network, instant)
+#   2. uv, which reads the PEP 723 header in dotfiles.py and provides the
+#      dependencies in a cached environment
+# Linked to ~/.local/bin/dotfiles by profiles/terminal-setup.sh.
+#
+# Exit 127 with a hint when neither is available; install.sh treats that as
+# "use the plain bash menu instead".
+
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+app="$here/dotfiles.py"
+
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import click, rich' >/dev/null 2>&1; then
+    exec python3 "$app" "$@"
+fi
+
+for uv in uv "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+    if command -v "$uv" >/dev/null 2>&1; then
+        exec "$uv" run --quiet --script "$app" "$@"
+    fi
+done
+
+echo "dotfiles: needs python3 with click + rich, or uv." >&2
+echo "  sudo apt install python3-click python3-rich   # or: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+exit 127

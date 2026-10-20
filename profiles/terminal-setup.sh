@@ -104,16 +104,10 @@ fi
 # ============================================================================
 # Banner
 # ============================================================================
-echo ""
-echo "======================================"
-echo "  Terminal Setup"
-echo "  tmux + kitty + neovim + zsh"
-echo "======================================"
-echo ""
+log_banner "Terminal" "tmux · kitty · neovim · shell"
 log_info "Dotfiles: $DOTFILES_DIR"
 [[ $NONINTERACTIVE -eq 1 ]] && log_info "Running non-interactively (safe defaults)"
 [[ $UPDATE_MODE -eq 1 ]]    && log_info "Update mode — pinned tools will be upgraded if stale"
-[[ $DRY_RUN -eq 1 ]]        && log_warning "Dry-run mode — no changes will be made"
 echo ""
 
 
@@ -482,6 +476,13 @@ if [[ -d "$DOTFILES_DIR/scripts/utilities" ]]; then
     log_success "Utility scripts linked to ~/.local/bin"
 else
     log_warning "scripts/utilities not found — skipping utility scripts"
+fi
+
+# The `dotfiles` CLI (status / install / logs). The launcher picks a python
+# with click + rich, or uv; see cli/dotfiles.
+if [[ -f "$DOTFILES_DIR/cli/dotfiles" ]]; then
+    safe_symlink "$DOTFILES_DIR/cli/dotfiles" "$HOME/.local/bin/dotfiles"
+    log_success "dotfiles CLI linked — try 'dotfiles status'"
 fi
 
 # ~/.local/bin is created and put on PATH at the top of this script, so this

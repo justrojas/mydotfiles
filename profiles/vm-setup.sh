@@ -41,11 +41,7 @@ init_common "$@"
 
 STEP_TOTAL=3
 
-echo ""
-echo "======================================"
-echo "   VM / Headless Setup"
-echo "======================================"
-echo ""
+log_banner "VM / headless" "shell · neovim · tmux · CLI tools"
 
 # ============================================================================
 # Preflight

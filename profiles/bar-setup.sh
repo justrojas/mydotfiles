@@ -38,11 +38,7 @@ init_common "$@"
 
 STEP_TOTAL=5
 
-echo ""
-echo "======================================"
-echo "   Top Bar Setup (polybar)"
-echo "======================================"
-echo ""
+log_banner "Top bar" "polybar · media card · bluetooth · wifi"
 
 # ============================================================================
 log_step "Preflight checks"
