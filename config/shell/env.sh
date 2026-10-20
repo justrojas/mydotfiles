@@ -101,6 +101,19 @@ if [ -n "${TMUX:-}" ]; then
 fi
 export TERM_PROGRAM="${TERM_PROGRAM:-kitty}"
 
+# --- Stale herdr environment ------------------------------------------------
+# A kitty window launched from inside a herdr pane inherits HERDR_ENV and
+# friends, so running `herdr` there fails with "nested herdr is disabled" even
+# though the window is not a herdr pane. herdr spawns pane shells directly, so a
+# real pane's shell has herdr as its parent; anything else is a leak — drop it.
+if [ -n "${HERDR_ENV:-}" ]; then
+    case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in
+        herdr*) ;;
+        *) unset HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_STARTUP_CWD \
+                 HERDR_TAB_ID HERDR_WORKSPACE_ID ;;
+    esac
+fi
+
 # --- TERM sanity ------------------------------------------------------------
 # kitty sets TERM=xterm-kitty, but that terminfo entry only exists where kitty
 # (or the kitty-terminfo package) has been installed. On a machine that never
