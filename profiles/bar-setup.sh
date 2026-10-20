@@ -72,8 +72,10 @@ log_step "Installing polybar + playerctl"
 # what the volume pill opens on right-click. fonts-noto-color-emoji backs the
 # emoji font declared in config.ini. rofi renders the wifi dropdown — without
 # it network-menu.sh falls back to a centred kdialog box, which works but is
-# not a dropdown.
-BAR_PACKAGES=(polybar playerctl pavucontrol wmctrl rofi fonts-noto-color-emoji)
+# not a dropdown. bluez provides bluetoothctl for the bluetooth module, and
+# python3-gi + gir1.2-gtk-3.0 run the now-playing card (scripts/media-card.py).
+BAR_PACKAGES=(polybar playerctl pavucontrol wmctrl rofi fonts-noto-color-emoji
+              bluez python3-gi gir1.2-gtk-3.0)
 
 if [[ $DRY_RUN -eq 0 ]]; then
     sudo apt-get update -qq

@@ -131,8 +131,74 @@ cmd_state_icon() {
     esac
 }
 
+# ---------------------------------------------------------------------------
+# follow — the whole media group as ONE live polybar module.
+#
+# The old layout was three interval-polled modules (prev / toggle / next), so a
+# click took up to a second to show. Here `playerctl --follow` pushes a line on
+# every status or track change and we re-render immediately (tail = true).
+#
+# Output: ⏮  ⏯  ⏭   Artist — Title, each part wrapped in a polybar action tag.
+# Clicking the title opens the now-playing card (album art + controls).
+# Prints an empty line when nothing is playing, so the group disappears.
+# ---------------------------------------------------------------------------
+SELF="$HOME/.config/polybar/scripts/spotify.sh"
+FG_DIM="#6e6482"
+FG_ACCENT="#9d7cd8"
+TITLE_LEN=32
+
+# Polybar markup is %{...}; a literal % or } in a title would break the line.
+bar_escape() { local s="${1//%/%%}"; printf '%s' "${s//\}/)}"; }
+
+render() {
+    local status="$1" artist="$2" title="$3" toggle text
+    case "$status" in
+        Playing) toggle=$'\uf04c' ;;
+        Paused)  toggle=$'\uf04b' ;;
+        *)       echo ""; return ;;
+    esac
+
+    text="$title"
+    [ -n "$artist" ] && text="$artist — $title"
+    [ -z "$title" ] && text="—"
+    text="$(printf '%s' "$text" | tr '\n\t' '  ')"
+    [ "${#text}" -gt "$TITLE_LEN" ] && text="${text:0:$((TITLE_LEN - 1))}…"
+    text="$(bar_escape "$text")"
+
+    local scroll="%{A4:$SELF volume-up:}%{A5:$SELF volume-down:}"
+    printf '%s%%{F%s}%%{A1:%s previous:} %s %%{A}%%{F-}  %%{F%s}%%{A1:%s play-pause:} %s %%{A}%%{F-}  %%{F%s}%%{A1:%s next:} %s %%{A}%%{F-}   %%{A1:%s card:}%s%%{A}%%{A}%%{A}\n' \
+        "$scroll" \
+        "$FG_DIM" "$SELF" $'\uf048' \
+        "$FG_ACCENT" "$SELF" "$toggle" \
+        "$FG_DIM" "$SELF" $'\uf051' \
+        "$SELF" "$text"
+}
+
+cmd_follow() {
+    have_playerctl || { echo ""; sleep infinity; }
+    # Re-spawn the follower if it ever exits (e.g. playerctld restarts).
+    while :; do
+        playerctl -p "$PLAYER_PREFERENCE,%any" --follow metadata \
+            --format $'{{status}}\x1f{{artist}}\x1f{{title}}' 2>/dev/null |
+            while IFS=$'\x1f' read -r status artist title; do
+                render "$status" "$artist" "$title"
+            done
+        echo ""
+        sleep 2
+    done
+}
+
+# card — the now-playing popup (album art, live progress, seek, controls).
+# It is a small GTK window in media-card.py: rofi could neither refresh the
+# progress nor accept single clicks. Running it again closes the open card.
+cmd_card() {
+    setsid python3 "$(dirname "$(readlink -f "$0")")/media-card.py" >/dev/null 2>&1 &
+}
+
 case "${1:-status}" in
     status)      cmd_status ;;
+    follow)      cmd_follow ;;
+    card)        cmd_card ;;
     play-pause)  pc play-pause ;;
     play)        pc play ;;
     pause)       pc pause ;;
