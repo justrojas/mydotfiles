@@ -93,7 +93,13 @@ pre_flight_checks() {
 setup_repositories() {
     log_step "Setting up external repositories..."
 
-    # Papirus icon theme PPA
+    # Papirus icon theme PPA. Launchpad PPAs are Ubuntu-only: on Debian there
+    # is no matching suite, `apt-get update` fails and set -e aborts the
+    # profile. Debian ships papirus-icon-theme in main, so just skip the PPA.
+    if [[ "$(detect_os)" != "ubuntu" ]]; then
+        log_info "Not Ubuntu — using the distro's papirus-icon-theme (no PPA)"
+        return 0
+    fi
     log_info "Adding Papirus icon theme repository..."
     local papirus_list="/etc/apt/sources.list.d/papirus-ppa.list"
     if [[ ! -f "$papirus_list" || $DRY_RUN -eq 0 ]]; then

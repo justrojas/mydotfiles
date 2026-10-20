@@ -45,7 +45,8 @@ echo ""
 # ============================================================================
 # Step 1: Base tools
 # ============================================================================
-log_step "Step 1/4 — Install system packages"
+STEP_TOTAL=4
+log_step "Install system packages"
 BASE_SCRIPT="$DOTFILES_DIR/profiles/install-packages.sh"
 if [[ ! -f "$BASE_SCRIPT" ]]; then
     log_error "install-packages.sh not found at $BASE_SCRIPT"
@@ -68,7 +69,7 @@ log_success "Base tools installed"
 # ============================================================================
 # Step 2: Terminal configuration
 # ============================================================================
-log_step "Step 2/4 — Terminal configuration"
+log_step "Terminal configuration"
 MINIMAL_SCRIPT="$DOTFILES_DIR/profiles/terminal-setup.sh"
 if [[ ! -f "$MINIMAL_SCRIPT" ]]; then
     log_error "terminal-setup.sh not found at $MINIMAL_SCRIPT"
@@ -82,7 +83,7 @@ log_success "Terminal configured"
 # ============================================================================
 # Step 3: KDE customisations (optional)
 # ============================================================================
-log_step "Step 3/4 — KDE Plasma customisations"
+log_step "KDE Plasma customisations"
 
 install_kde=false
 if [[ $NONINTERACTIVE -eq 0 ]]; then
@@ -105,7 +106,7 @@ fi
 # ============================================================================
 # Step 4: Top bar (optional)
 # ============================================================================
-log_step "Step 4/4 — Top bar (polybar)"
+log_step "Top bar (polybar)"
 
 install_bar=false
 if [[ $NONINTERACTIVE -eq 0 ]]; then
@@ -140,10 +141,14 @@ log_success "======================================"
 echo ""
 log_info "Installed and configured:"
 echo "  + Base development tools (git, zsh, tmux, kitty, neovim, fzf, eza, ...)"
-echo "  + Shell: bash (default) + zsh + Oh My Zsh + oh-my-posh"
+if [[ "${SHELL_FLAG[*]-}" == *"--shell=zsh"* ]]; then
+    echo "  + Shell: zsh + Oh My Zsh + oh-my-posh"
+else
+    echo "  + Shell: bash + oh-my-posh"
+fi
 echo "  + Terminal configs (tmux, kitty, bash, zsh, neovim/NvChad)"
 $install_kde && echo "  + KDE Plasma customisations" || true
-$install_bar && echo "  + polybar top bar with Spotify controls" || true
+$install_bar && echo "  + polybar top bar (media card, bluetooth, wifi)" || true
 echo ""
 log_info "Next steps:"
 echo "  • Open a new terminal to load your configured shell"

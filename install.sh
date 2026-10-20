@@ -23,7 +23,10 @@ init_common "$@"
 # It shows the same profiles as a table with system/repo status, records a
 # transcript of each run and ends with a summary. It needs python3 with
 # click + rich, or uv; on a bare box with neither, the launcher exits 127 and
-# we fall through to the plain bash menu below. --plain forces the bash menu,
+# we fall through to the plain bash menu below.
+# The launcher signals that with exit 69 (EX_UNAVAILABLE), not 127: a profile
+# that fails on a missing command under set -e also exits 127, and that must
+# be reported as a failed install, not silently reopen the bash menu. --plain forces the bash menu,
 # and the CLI is skipped when stdin/stdout are not terminals (`echo 1 | ...`).
 # ============================================================================
 if [[ " $* " != *" --plain "* && -t 0 && -t 1 ]]; then
@@ -31,7 +34,7 @@ if [[ " $* " != *" --plain "* && -t 0 && -t 1 ]]; then
     [[ $DRY_RUN -eq 1 ]] && cli_args+=(--dry-run)
     rc=0
     "$DOTFILES_DIR/cli/dotfiles" "${cli_args[@]+"${cli_args[@]}"}" || rc=$?
-    if [[ $rc -ne 127 ]]; then
+    if [[ $rc -ne 69 ]]; then
         trap - EXIT   # the CLI already reported; don't add "Script failed"
         exit "$rc"
     fi
@@ -124,7 +127,7 @@ choose_shell() {
     echo "  2) zsh   — personal machines (oh-my-zsh + plugins; asks you to run chsh at the end)"
     echo ""
     local pick
-    read -rp "Shell [1-2, default 1]: " -n 1 pick </dev/tty || true
+    read -rp "Shell [1-2, default 1]: " -n 1 pick <"$TTY_STDIN" || true
     echo ""
     case "$pick" in
         2) SHELL_CHOICE=zsh ;;

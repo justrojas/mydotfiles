@@ -142,6 +142,7 @@ class Card(Gtk.Window):
         self.length = 0.0
         self.art_url = None
         self.seeking = False
+        self._polling = False
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, name="card")
         self.add(card)
@@ -189,7 +190,7 @@ class Card(Gtk.Window):
 
         if not self.refresh():
             sys.exit(0)
-        GLib.timeout_add(POLL_MS, self.refresh)
+        GLib.timeout_add(POLL_MS, self.tick)
 
     # -- widgets ---------------------------------------------------------
     def _label(self, name, box):
@@ -240,14 +241,44 @@ class Card(Gtk.Window):
             run("-p", self.player, "volume", "0.05-")
 
     # -- state -----------------------------------------------------------
+    @staticmethod
+    def fetch():
+        """Blocking playerctl calls — run off the GTK thread (see tick)."""
+        player = pick_player()
+        if not player:
+            return None, None
+        fmt_str = SEP.join(["{{status}}", "{{xesam:title}}", "{{xesam:artist}}", "{{xesam:album}}",
+                            "{{mpris:artUrl}}", "{{mpris:length}}", "{{position}}"])
+        parts = (run("-p", player, "metadata", "--format", fmt_str).split(SEP) + [""] * 7)[:7]
+        return player, parts
+
+    def tick(self):
+        """Poll in a worker thread so a slow player (2 s playerctl timeout)
+        never freezes the card; at most one poll in flight."""
+        if not self._polling:
+            self._polling = True
+
+            def work():
+                result = self.fetch()
+                GLib.idle_add(self._apply_async, *result)
+
+            threading.Thread(target=work, daemon=True).start()
+        return True
+
+    def _apply_async(self, player, parts):
+        self._polling = False
+        self.apply(player, parts)
+        return False
+
     def refresh(self):
-        self.player = pick_player()
+        """Synchronous refresh: used once at startup and right after a click."""
+        return self.apply(*self.fetch())
+
+    def apply(self, player, parts):
+        self.player = player
         if not self.player:
             self.close()
             return False
-        fmt_str = SEP.join(["{{status}}", "{{xesam:title}}", "{{xesam:artist}}", "{{xesam:album}}",
-                            "{{mpris:artUrl}}", "{{mpris:length}}", "{{position}}"])
-        parts = (run("-p", self.player, "metadata", "--format", fmt_str).split(SEP) + [""] * 7)[:7]
         status, title, artist, album, art, length, pos = parts
 
         self.title.set_text(title or "Unknown title")
@@ -319,10 +350,18 @@ class Card(Gtk.Window):
 
 
 def toggle_existing():
-    """Second click on the title closes an open card instead of stacking."""
+    """Second click on the title closes an open card instead of stacking.
+
+    The pidfile can be stale (the card was SIGKILLed, or the session ended)
+    and its PID reused by something else, so only signal a process that is
+    really this script.
+    """
     try:
         with open(PIDFILE) as f:
             pid = int(f.read().strip())
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            if b"media-card.py" not in f.read():
+                return False
         os.kill(pid, signal.SIGTERM)
         return True
     except (OSError, ValueError):

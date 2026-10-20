@@ -39,6 +39,9 @@ DOTFILES_DIR="$ROOT" bash -c '
     log_step "First step";  log_info "hello"
     log_step "Second step"; log_warning "disk is low"; log_warning "disk is low"
     log_step "Third step";  log_error "it broke" 2>&1
+    # A nested profile: its steps are sub-steps and must not be counted.
+    bash -c "source \"\$DOTFILES_DIR/lib/common.sh\"; trap - EXIT; STEP_TOTAL=9; log_step Child"
+    echo "# dotfiles: exit=2 seconds=4.5"
 ' >"$transcript"
 
 if grep -q $'\033' "$transcript"; then _bad "log helpers emit escape codes when not a tty"; else _ok "no escape codes when not a tty"; fi
@@ -48,14 +51,14 @@ import importlib.util, sys
 from pathlib import Path
 spec = importlib.util.spec_from_file_location("d", Path(sys.argv[1]) / "cli/dotfiles.py")
 m = importlib.util.module_from_spec(spec); sys.modules["d"] = m; spec.loader.exec_module(m)
-steps, total, warnings, errors = m._parse_log(Path(sys.argv[2]))
-print(f"{len(steps)}|{total}|{'/'.join(steps)}|{'/'.join(warnings)}|{'/'.join(errors)}")
+r = m._parse_log(Path(sys.argv[2]))
+print(f"{len(r.steps)}|{r.step_total}|{'/'.join(r.steps)}|{'/'.join(r.warnings)}|{'/'.join(r.errors)}|{r.code}")
 EOF
 )"
 if [[ -z "$parsed" ]]; then
     echo "  (python3 lacks click/rich — parser checks skipped)"
-elif [[ "$parsed" == "3|3|First step/Second step/Third step|disk is low|it broke" ]]; then
-    _ok "summary parser reads steps, de-duplicated warnings and errors"
+elif [[ "$parsed" == "3|3|First step/Second step/Third step|disk is low|it broke|2" ]]; then
+    _ok "summary parser: top-level steps only, de-duplicated warnings/errors, exit code"
 else
     _bad "summary parser: got '$parsed'"
 fi
@@ -65,6 +68,15 @@ for args in "--help" "profiles" "status" "logs" "install --help"; do
     # shellcheck disable=SC2086
     if out="$("$CLI" $args </dev/null 2>&1)"; then _ok "dotfiles $args"; else _bad "dotfiles $args: $out"; fi
 done
+
+mkdir -p "$XDG_CACHE_HOME/dotfiles/logs"
+touch "$XDG_CACHE_HOME/dotfiles/logs/notes.log"
+cp "$transcript" "$XDG_CACHE_HOME/dotfiles/logs/20260101-120000-terminal.log"
+if out="$("$CLI" logs </dev/null 2>&1)" && [[ "$out" == *"exit 2"* ]]; then
+    _ok "logs: ignores foreign files, shows recorded exit code"
+else
+    _bad "logs with foreign file / exit code: $out"
+fi
 
 if "$CLI" install nope </dev/null >/dev/null 2>&1; then _bad "unknown profile accepted"; else _ok "unknown profile rejected"; fi
 

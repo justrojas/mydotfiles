@@ -180,7 +180,11 @@ else
         case "${panel_reply,,}" in
             r)
                 if [[ $DRY_RUN -eq 0 ]]; then
-                    [[ -f "$plasma_cfg" ]] && backup_path "$plasma_cfg"
+                    # COPY, not backup_path (which moves): plasmashell is running
+                    # and writes only changed keys back to whatever is on disk,
+                    # so moving the file away loses the rest of the layout.
+                    [[ -f "$plasma_cfg" ]] && cp -a "$plasma_cfg" "$plasma_cfg.bak.$BACKUP_TIMESTAMP" \
+                        && log_info "Backed up layout to $plasma_cfg.bak.$BACKUP_TIMESTAMP"
                     "$qdbus_bin" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
                         'panels().forEach(function(p){ if (p.location=="top") p.remove(); });' >/dev/null 2>&1 \
                         && log_success "Removed $top_panels top Plasma panel(s)" \
@@ -192,7 +196,11 @@ else
                 ;;
             a)
                 if [[ $DRY_RUN -eq 0 ]]; then
-                    [[ -f "$plasma_cfg" ]] && backup_path "$plasma_cfg"
+                    # COPY, not backup_path (which moves): plasmashell is running
+                    # and writes only changed keys back to whatever is on disk,
+                    # so moving the file away loses the rest of the layout.
+                    [[ -f "$plasma_cfg" ]] && cp -a "$plasma_cfg" "$plasma_cfg.bak.$BACKUP_TIMESTAMP" \
+                        && log_info "Backed up layout to $plasma_cfg.bak.$BACKUP_TIMESTAMP"
                     "$qdbus_bin" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
                         'panels().forEach(function(p){ if (p.location=="top") p.hiding="autohide"; });' >/dev/null 2>&1 \
                         && log_success "Set top Plasma panel(s) to auto-hide" \

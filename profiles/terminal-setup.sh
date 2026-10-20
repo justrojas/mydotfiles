@@ -419,7 +419,7 @@ else
         # `|| true` keeps a transient network failure from aborting the
         # whole run, but the result MUST then be verified — otherwise a
         # failed download is reported as a successful install.
-        curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin" || true
+        run_remote_installer https://ohmyposh.dev/install.sh bash -d "$HOME/.local/bin" || true
     else
         log_info "[DRY RUN] Would install oh-my-posh to ~/.local/bin"
     fi

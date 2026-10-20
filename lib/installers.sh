@@ -430,7 +430,7 @@ install_glow() {
 install_zoxide() {
     log_info "Installing zoxide via official installer..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
+        run_remote_installer https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh bash || true
     else
         log_info "[DRY RUN] Would install zoxide via official installer"
     fi
@@ -441,7 +441,7 @@ install_zoxide() {
 install_herdr() {
     log_info "Installing herdr via official installer..."
     if [[ $DRY_RUN -eq 0 ]]; then
-        curl -fsSL https://herdr.dev/install.sh | sh
+        run_remote_installer https://herdr.dev/install.sh sh || true
     else
         log_info "[DRY RUN] Would install herdr via https://herdr.dev/install.sh"
     fi

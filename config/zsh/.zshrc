@@ -77,11 +77,17 @@ fi
 # --- Completion -------------------------------------------------------------
 fpath+=~/.zfunc
 autoload -Uz compinit
-if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qNmh+24) ]]; then
-    compinit -d "${ZDOTDIR:-$HOME}/.zcompdump"
-else
-    compinit -C -d "${ZDOTDIR:-$HOME}/.zcompdump"
-fi
+# Full compinit (with the security audit) only when the dump is over a day
+# old; otherwise -C reuses it. The (#q…) glob qualifier needs EXTENDED_GLOB —
+# without it the test is always true and every shell paid for a full compinit.
+() {
+    setopt local_options extended_glob
+    if [[ -n $1(#qNmh+24) || ! -s $1 ]]; then
+        compinit -d "$1"
+    else
+        compinit -C -d "$1"
+    fi
+} "${ZDOTDIR:-$HOME}/.zcompdump"
 zstyle ':completion:*' menu select
 
 # tmux session-name completion for `tkill`.

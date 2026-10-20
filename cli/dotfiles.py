@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["click>=8.0", "rich>=12.0"]
+# dependencies = ["click>=8.0", "rich>=11.2"]  # 11.2 = Ubuntu 22.04 python3-rich
 # ///
 """dotfiles — command-line front end for this repository's installer.
 
@@ -101,8 +101,10 @@ class Profile:
 PROFILES: list[Profile] = [
     Profile("terminal", "terminal-setup.sh", "Terminal",
             "tmux, kitty, neovim and your chosen shell. Links configs from this repo.", sudo=False),
+    # desktop-setup.sh (and install-packages.sh under it) accept only these two.
     Profile("desktop", "desktop-setup.sh", "Desktop",
-            "All packages + terminal setup + optional KDE look and top bar.", sudo=True, os=frozenset(DEBIAN_LIKE)),
+            "All packages + terminal setup + optional KDE look and top bar.", sudo=True,
+            os=frozenset({"ubuntu", "debian"})),
     Profile("vm", "vm-setup.sh", "VM / headless",
             "Shell, neovim, tmux and CLI tools. No GUI, kitty or fonts.", sudo=True, os=frozenset(DEBIAN_LIKE)),
     Profile("bar", "bar-setup.sh", "Top bar",
@@ -299,7 +301,11 @@ def profiles_table(s: System, numbered: bool = False) -> Table:
 # ---------------------------------------------------------------------------
 # Running a profile
 # ---------------------------------------------------------------------------
-STEP_RE = re.compile(r"(?:==>|──) \[(\d+)/(\d+)\]\s*(.*)")  # lib/common.sh log_step
+# Top-level steps only: nested profiles print indented "· [n/N]" sub-steps.
+STEP_RE = re.compile(r"^(?:==>|──) \[(\d+)/(\d+)\]\s*(.*)")  # lib/common.sh log_step
+# Trailer appended by run_profile so `logs` can report the real outcome.
+TRAILER_RE = re.compile(r"^# dotfiles: exit=(\d+) seconds=([\d.]+)")
+LOG_NAME_RE = re.compile(r"^(\d{8}-\d{6})-([a-z]+)$")
 # lib/common.sh _log: "HH:MM:SS LEVEL    message" (and the legacy "[LEVEL] message")
 LEVEL_RE = re.compile(r"^\s*(?:\d\d:\d\d:\d\d\s+|\[)(WARNING|WARN|ERROR)\]?\s+(.*)")
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r")
@@ -307,7 +313,7 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r")
 
 @dataclass
 class RunResult:
-    code: int
+    code: int | None
     seconds: float
     log: Path
     steps: list[str]
@@ -316,14 +322,20 @@ class RunResult:
     errors: list[str]
 
 
-def _parse_log(path: Path) -> tuple[list[str], int, list[str], list[str]]:
-    steps, warnings, errors, total = [], [], [], 0
+def _parse_log(path: Path) -> RunResult:
+    """Steps, de-duplicated warnings/errors and the recorded outcome of a run.
+    code is None for a log without the trailer (interrupted hard, or old)."""
+    r = RunResult(None, 0.0, path, [], 0, [], [])
+    steps, warnings, errors = r.steps, r.warnings, r.errors
+    total = 0
     try:
         raw = path.read_text(errors="replace")
     except OSError:
-        return steps, total, warnings, errors
+        return r
     for line in ANSI_RE.sub("", raw).splitlines():
-        if m := STEP_RE.search(line):
+        if t := TRAILER_RE.match(line):
+            r.code, r.seconds = int(t.group(1)), float(t.group(2))
+        elif m := STEP_RE.search(line):
             steps.append(m.group(3).strip())
             total = int(m.group(2))
         elif m := LEVEL_RE.match(line):
@@ -331,7 +343,8 @@ def _parse_log(path: Path) -> tuple[list[str], int, list[str], list[str]]:
             msg = m.group(2).strip()
             if msg and msg not in bucket:  # profiles nest; the same notice can repeat
                 bucket.append(msg)
-    return steps, total, warnings, errors
+    r.step_total = total
+    return r
 
 
 def run_profile(p: Profile, flags: list[str]) -> RunResult:
@@ -352,13 +365,26 @@ def run_profile(p: Profile, flags: list[str]) -> RunResult:
     except KeyboardInterrupt:
         code = 130
     seconds = time.monotonic() - start
-    steps, total, warnings, errors = _parse_log(log)
-    return RunResult(code, seconds, log, steps, total, warnings, errors)
+    try:
+        with log.open("a") as f:
+            f.write(f"\n# dotfiles: exit={code} seconds={seconds:.1f}\n")
+    except OSError:
+        pass
+    result = _parse_log(log)
+    result.code, result.seconds = code, seconds
+    return result
 
 
 def summary_panel(p: Profile, r: RunResult) -> Panel:
     ok = r.code == 0
-    status = "[green]Complete[/]" if ok else ("[yellow]Interrupted[/]" if r.code == 130 else f"[red]Failed[/] [dim](exit {r.code})[/]")
+    if r.code is None:
+        status = "[yellow]Unknown[/] [dim](run did not finish recording)[/]"
+    elif ok:
+        status = "[green]Complete[/]"
+    elif r.code == 130:
+        status = "[yellow]Interrupted[/]"
+    else:
+        status = f"[red]Failed[/] [dim](exit {r.code})[/]"
     mins, secs = divmod(int(r.seconds), 60)
     lines = [f"[dim]Status:[/]   {status}",
              f"[dim]Duration:[/] [cyan dim]{mins}m {secs:02d}s[/]"]
@@ -488,35 +514,40 @@ def install(ctx: click.Context, profile: str, shell: str | None, dry_run: bool, 
 @click.option("--show", "show", is_flag=True, help="Print the summary of the most recent run.")
 def logs(count: int, show: bool) -> None:
     """List recent install logs."""
-    files = sorted(LOG_DIR.glob("*.log"), reverse=True)
+    # Only files this CLI wrote ("YYYYmmdd-HHMMSS-<profile>.log"); anything
+    # else dropped in the directory is ignored rather than crashing the table.
+    files = sorted((f for f in LOG_DIR.glob("*.log") if LOG_NAME_RE.match(f.stem)), reverse=True)
     if not files:
         console.print(f"[dim]No install logs yet in[/] {tilde(LOG_DIR)}")
         return
     if show:
         latest = files[0]
-        key = latest.stem.split("-", 2)[-1]
-        steps, total, warnings, errors = _parse_log(latest)
-        r = RunResult(0 if not errors else 1, 0, latest, steps, total, warnings, errors)
-        console.print(summary_panel(BY_KEY.get(key, PROFILES[0]), r))
+        key = LOG_NAME_RE.match(latest.stem).group(2)
+        console.print(summary_panel(BY_KEY.get(key, PROFILES[0]), _parse_log(latest)))
         return
     t = Table(title=Align.left("[bold]Install logs[/]"), box=box.ROUNDED, padding=(0, 1), header_style="bold")
     t.add_column("When", style="cyan", no_wrap=True)
     t.add_column("Profile", style="white")
+    t.add_column("Result", no_wrap=True)
     t.add_column("Steps", justify="right", style="dim")
     t.add_column("Warn", justify="right")
     t.add_column("Err", justify="right")
     t.add_column("Log", style="dim", overflow="fold")
     for f in files[:count]:
-        stamp, key = f.stem.rsplit("-", 1)
-        steps, total, warnings, errors = _parse_log(f)
+        stamp, key = LOG_NAME_RE.match(f.stem).groups()
+        r = _parse_log(f)
         when = datetime.strptime(stamp, "%Y%m%d-%H%M%S").strftime("%Y-%m-%d %H:%M")
-        t.add_row(when, key, f"{len(steps)}/{total}" if total else "—",
-                  Text(str(len(warnings)), style="yellow" if warnings else "dim"),
-                  Text(str(len(errors)), style="red" if errors else "dim"), f.name)
+        if r.code is None:
+            result = Text("unknown", style="yellow dim")
+        elif r.code == 0:
+            result = Text("ok", style="green")
+        else:
+            result = Text(f"exit {r.code}", style="red")
+        t.add_row(when, key, result, f"{len(r.steps)}/{r.step_total}" if r.step_total else "—",
+                  Text(str(len(r.warnings)), style="yellow" if r.warnings else "dim"),
+                  Text(str(len(r.errors)), style="red" if r.errors else "dim"), f.name)
     console.print(t)
     console.print(f"[dim]in {tilde(LOG_DIR)} · `dotfiles logs --show` for the latest summary[/]")
-    return
-    console.print(t)
 
 
 def main() -> None:

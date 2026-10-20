@@ -23,8 +23,12 @@ fi
 # Dry run mode (set to 1 to preview changes without executing)
 DRY_RUN=${DRY_RUN:-0}
 
-# Backup timestamp
-readonly BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# Backup timestamp. Guarded like the colours: a second `source` must not fail
+# on re-assigning a readonly (under set -e that killed the script).
+if [[ -z "${BACKUP_TIMESTAMP:-}" ]]; then
+    BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    readonly BACKUP_TIMESTAMP
+fi
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -38,15 +42,26 @@ readonly BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 #
 # cli/dotfiles.py parses WARNING / ERROR and the step lines below out of the
 # install transcript for its summary panel — keep those tokens stable.
+#
+# The message is printed with %s, not %b: logged text often contains commands
+# ("Would execute: printf '\n'...") whose backslashes must stay literal.
 _log() {
     local color="$1" level="$2"; shift 2
-    printf "${DIM}%s${NC} ${color}%-8s${NC} %b\n" "$(date +%H:%M:%S)" "$level" "$*"
+    printf "${DIM}%s${NC} ${color}%-8s${NC} %s\n" "$(date +%H:%M:%S)" "$level" "$*"
 }
 
 log_info()    { _log "${DIM}${BLUE}"  INFO    "$*"; }
 log_success() { _log "${GREEN}"       OK      "$*"; }
 log_warning() { _log "${YELLOW}"      WARNING "$*"; }
-log_error()   { _log "${RED}"         ERROR   "$*" >&2; }
+# Colour is decided from stdout, but errors go to stderr: `2>errors.log` with a
+# terminal on stdout must not write escape codes into the file.
+log_error() {
+    if [[ -t 2 ]]; then
+        _log "${RED}" ERROR "$*" >&2
+    else
+        printf '%s %-8s %s\n' "$(date +%H:%M:%S)" ERROR "$*" >&2
+    fi
+}
 
 STEP_NUM=0
 STEP_TOTAL=0  # Set this in the calling script for "X/N" display
@@ -63,11 +78,29 @@ log_banner() {
 }
 
 # A step header reads as a section break:   ── [3/10] Installing tmux
+#
+# Profiles nest (desktop runs install-packages, terminal, kde and bar; vm runs
+# terminal). A child's steps are printed indented as sub-steps:
+#
+#   ── [2/4] Terminal configuration
+#      · [1/10] Checking for required tools
+#
+# so the outer counter stays meaningful and cli/dotfiles.py, which counts only
+# unindented "── [n/N]" lines, reports the top-level profile's progress.
+# Depth is passed to children through DOTFILES_STEP_DEPTH, bumped the first
+# time a profile prints a step (install.sh never does, so the profile it
+# launches is still top-level).
+_STEP_DEPTH="${DOTFILES_STEP_DEPTH:-0}"
 log_step() {
     (( STEP_NUM++ )) || true
+    export DOTFILES_STEP_DEPTH=$(( _STEP_DEPTH + 1 ))
     local counter=""
     [[ $STEP_TOTAL -gt 0 ]] && counter="${YELLOW}[${STEP_NUM}/${STEP_TOTAL}]${NC} "
-    echo -e "\n${DIM}──${NC} ${counter}${BOLD}${CYAN}$*${NC}"
+    if [[ $_STEP_DEPTH -gt 0 ]]; then
+        echo -e "\n   ${DIM}·${NC} ${counter}${CYAN}$*${NC}"
+    else
+        echo -e "\n${DIM}──${NC} ${counter}${BOLD}${CYAN}$*${NC}"
+    fi
 }
 
 # ============================================================================
@@ -82,6 +115,31 @@ run_or_dry() {
     else
         "$@"
     fi
+}
+
+# Run a vendor install script, but only after it has fully downloaded.
+#
+#   run_remote_installer <url> <bash|sh> [args...]
+#
+# `curl URL | bash` executes whatever arrives: without -f an HTTP error page
+# is fed to the interpreter, and a dropped connection runs a truncated script.
+# Download to a temp file first, require a successful transfer and a shebang,
+# then run it. Returns non-zero on any failure (callers verify the binary).
+run_remote_installer() {
+    local url="$1" interp="$2"; shift 2
+    local tmp rc=0
+    tmp="$(mktemp)" || return 1
+    if ! curl -fsSL --retry 2 --max-time 60 -o "$tmp" "$url"; then
+        log_warning "Download failed: $url"
+        rm -f "$tmp"; return 1
+    fi
+    if [[ "$(head -c 2 "$tmp")" != "#!" ]]; then
+        log_warning "Not an install script (no shebang): $url"
+        rm -f "$tmp"; return 1
+    fi
+    "$interp" "$tmp" "$@" || rc=$?
+    rm -f "$tmp"
+    return $rc
 }
 
 # ============================================================================

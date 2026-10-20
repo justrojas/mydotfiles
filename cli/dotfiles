@@ -7,8 +7,9 @@
 #      dependencies in a cached environment
 # Linked to ~/.local/bin/dotfiles by profiles/terminal-setup.sh.
 #
-# Exit 127 with a hint when neither is available; install.sh treats that as
-# "use the plain bash menu instead".
+# Exit 69 (EX_UNAVAILABLE) with a hint when neither is available; install.sh
+# treats exactly that code as "use the plain bash menu instead". Not 127: a
+# failed profile can legitimately exit 127 through the CLI.
 
 set -euo pipefail
 
@@ -27,4 +28,4 @@ done
 
 echo "dotfiles: needs python3 with click + rich, or uv." >&2
 echo "  sudo apt install python3-click python3-rich   # or: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-exit 127
+exit 69
