@@ -17,6 +17,17 @@ cd ~/Documents/my-dotfiles
 ./install.sh
 ```
 
+`install.sh` opens the `dotfiles` CLI (`cli/dotfiles.py`, click + rich) when
+python3 has click + rich or `uv` exists; otherwise, or with `--plain`, the bash
+menu. The launcher exits **69** (not 127) for "can't run", and install.sh falls
+back only on 69 — a profile failing on a missing command exits 127 and must be
+reported as a failed install.
+
+```bash
+dotfiles status | profiles | logs [--show]
+dotfiles install terminal|desktop|vm|bar [--shell bash|zsh] [--dry-run] [-y]
+```
+
 Profiles:
 - `1` — Terminal Setup (tmux, kitty, neovim, bash/zsh)
 - `2` — Desktop Setup (Ubuntu/Debian only, requires sudo)
@@ -27,7 +38,10 @@ Profiles:
 
 ```
 my-dotfiles/
-├── install.sh                  # Interactive installer (delegates to profiles/)
+├── install.sh                  # Entry point: dotfiles CLI, or bash menu (--plain)
+├── cli/
+│   ├── dotfiles                # Launcher: python3 w/ click+rich, else uv (exit 69 if neither)
+│   └── dotfiles.py             # click + rich CLI: status / profiles / install / logs
 ├── lib/
 │   └── common.sh               # Shared logging, symlink, backup, OS detection utils
 ├── profiles/
@@ -112,7 +126,8 @@ install.sh
         └── terminal-setup.sh --minimal --non-interactive
 
     [4] bar-setup.sh
-        ├── apt: polybar playerctl pavucontrol wmctrl fonts-noto-color-emoji
+        ├── apt: polybar playerctl pavucontrol wmctrl rofi fonts-noto-color-emoji
+        │        bluez python3-gi gir1.2-gtk-3.0
         ├── Symlink: ~/.config/polybar, ~/.local/bin/bar
         ├── Autostart entry: ~/.config/autostart/polybar.desktop
         └── Optionally mask Latte Dock autostart
@@ -142,6 +157,8 @@ combinations.
 ~/.config/polybar     → config/polybar/              # bar-setup.sh only
 ~/.local/bin/bar      → config/polybar/launch.sh     # bar-setup.sh only
 ~/.local/bin/kt       → scripts/utilities/kt
+~/.local/bin/dotfiles → cli/dotfiles
+~/.config/rofi        → config/rofi/                 # bar-setup.sh only
 ~/.local/bin/*.sh     → scripts/utilities/*.sh
 ```
 
@@ -404,11 +421,28 @@ Launch with `bar`. Logs to `~/.cache/polybar.log`.
 ### Media controls
 
 `scripts/spotify.sh` talks to the **real MPRIS D-Bus interface** via
-`playerctl`. It picks the player named `spotify` if present, else the first one
-actually playing, else the first available. Subcommands: `status`, `play-pause`,
-`next`, `previous`, `focus`, `volume-up`, `volume-down`, `next-icon`,
-`prev-icon`. The `*-icon` subcommands print nothing when no player is running,
-which collapses the three center pills instead of leaving dead buttons.
+`playerctl`, preferring `spotify`, else whatever is playing. The bar module is
+`spotify.sh follow` (`tail = true`): one `playerctl --follow` stream renders
+◀ ⏯ ▶ + "artist — title" with `%{A}` action tags, so state changes show
+instantly. Clicking the title runs `spotify.sh card` → `scripts/media-card.py`.
+
+`media-card.py` is a GTK3 window (python3-gi): album art, live seekable
+progress, single-click buttons. rofi was tried first and dropped — a dmenu is
+a static snapshot and only accepts double-clicks. It polls in a worker thread
+(one in flight), and the second title click closes it via a pidfile whose PID
+is checked against `/proc/<pid>/cmdline` before signalling.
+
+### Bluetooth
+
+`scripts/bluetooth.sh status|menu|toggle`. bluetoothctl 5.64 (22.04) has no
+`devices Connected`, so connection state comes from `info <mac>` per paired
+device. Glyphs are `$'\uXXXX'` escapes, as everywhere else in the bar.
+
+### Click handlers on internal modules
+
+polybar 3.5 honours `click-*` only on `custom/*` modules (and pulseaudio's own
+click-right). On temperature, battery and date the action is an `%{A1:…:}` /
+`%{A3:…:}` tag wrapped around the `format-*` value instead.
 
 A previous `scripts/utilities/spotify_tools/` package used the Spotify **Web
 API** (OAuth creds per machine, 5s poll, published a *fake* MPRIS bus). It was
@@ -452,6 +486,10 @@ drunning <container>         # Check if container is running (returns 0/1)
 ## Testing
 
 ```bash
+# Host-safe tests (repo/temp dirs only): step registry, cat art, bar --watch,
+# kitty purge safety, rofi theme, dotfiles CLI
+bash tests/run-host-tests.sh
+
 # Run all tests (requires Docker)
 ./tests/run-docker-tests.sh
 
@@ -465,6 +503,17 @@ drunning <container>         # Check if container is running (returns 0/1)
 The `vm` suite asserts both directions: that the shell/nvim/tmux environment
 IS present, and that kitty, herdr and the Nerd fonts were correctly SKIPPED.
 A VM profile that quietly drags in GUI components is a failed VM profile.
+
+### Log format contract
+
+`lib/common.sh` prints `HH:MM:SS LEVEL    message` (`_log`, `%s` — never
+`%b`, logged commands contain backslashes) and steps as `── [n/N] title`.
+Nested profiles (desktop → terminal/kde/bar, vm → terminal) print their steps
+indented as `   · [n/N]` via `DOTFILES_STEP_DEPTH`, so `cli/dotfiles.py`
+(`STEP_RE`, anchored at line start) counts only the top-level profile.
+`run_profile` appends `# dotfiles: exit=N seconds=S` to each transcript for
+`dotfiles logs`. Colours are empty when stdout (stderr, for log_error) is not
+a tty or `NO_COLOR` is set. `tests/test-dotfiles-cli.sh` pins all of this.
 
 ## Common Operations
 

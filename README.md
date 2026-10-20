@@ -32,6 +32,39 @@ bash install.sh
 
 `--recurse-submodules` is required to pull the tmux plugins.
 
+`install.sh` opens the [`dotfiles` command](#the-dotfiles-command) when it can
+(python3 with click + rich, or `uv`); on a bare machine, or with `--plain`, it
+shows the plain bash menu instead. Both offer the same profiles.
+
+### The `dotfiles` command
+
+A small click + rich CLI over the profiles (`cli/dotfiles.py`), styled like the
+team's rai-ledger tool. Terminal Setup links it to `~/.local/bin/dotfiles`.
+
+```bash
+dotfiles                          # profile table + system/repo footer, pick by number
+dotfiles status                   # which configs are linked / broken, which tools exist
+dotfiles profiles                 # what each profile does and needs
+dotfiles install terminal --shell zsh
+dotfiles install desktop --dry-run
+dotfiles install vm -y            # no prompts, safe defaults
+dotfiles logs                     # past runs: result, steps, warnings, errors
+dotfiles logs --show              # summary panel of the latest run
+```
+
+`install` runs the profile on your real terminal (so sudo and y/N prompts work
+normally) under `script(1)`, which saves a transcript to
+`~/.cache/dotfiles/logs/`. When it finishes you get a summary panel: status,
+duration, steps completed, warnings and errors, and the log path.
+
+The summary is parsed from the profiles' log lines, so `lib/common.sh` and the
+CLI share a format (`HH:MM:SS LEVEL    message`, steps as `── [n/N] title`).
+`tests/test-dotfiles-cli.sh` pins that contract.
+
+The launcher (`cli/dotfiles`) uses a system python that already has click and
+rich (`sudo apt install python3-click python3-rich`), otherwise `uv run`, which
+reads the dependencies from the script header.
+
 ### Installation profiles
 
 The interactive menu offers four options:
@@ -209,9 +242,9 @@ bar                          # launch (also autostarts on login)
 
 | Region | Modules |
 |---|---|
-| Left | virtual desktops (as app icons), then media ◀ / ⏯ / ▶ |
-| Center | clock |
-| Right | volume, temperature, battery, wifi |
+| Left | virtual desktops (as app icons), then media ◀ / ⏯ / ▶ + artist — title |
+| Center | clock (right-click: calendar) |
+| Right | volume, temperature, battery, bluetooth, wifi |
 
 The workspace module shows the **icons of the apps on each desktop** rather
 than numbers, so you can see what is where at a glance. The active desktop is
@@ -254,18 +287,40 @@ polybar writes colours as `#AARRGGBB` and rofi as `#RRGGBBAA`, so the same
 colour is spelled `#cc1e1b2e` in one file and `#1e1b2ecc` in the other —
 swapping them yields a believable wrong colour rather than an error.
 
-### Spotify / media controls
+### Media controls
 
-The center module talks to **MPRIS over D-Bus via `playerctl`** — no OAuth, no
-credentials, no network round-trip, and it works with any player (Spotify, mpv,
-VLC, Firefox), not just Spotify.
+The media group talks to **MPRIS over D-Bus via `playerctl`** — no OAuth, no
+credentials, no network round-trip, and it works with any player (Spotify,
+Chrome/Firefox, mpv, VLC), preferring Spotify when it is running.
+
+It is a single module fed by `playerctl --follow` (`spotify.sh follow`), so a
+play/pause shows instantly instead of on the next poll, and it disappears
+entirely when nothing is playing.
 
 | Interaction | Action |
 |---|---|
-| Click track | Play / pause |
-| Click ◀ / ▶ | Previous / next |
-| Scroll over track | Volume down / up |
-| Right-click track | Focus the player window |
+| Click ◀ / ⏯ / ▶ | Previous / play-pause / next |
+| Click the title | Open / close the now-playing card |
+| Scroll over the group | Player volume |
+
+The **now-playing card** (`scripts/media-card.py`) is a small GTK window under
+the bar: album art, title, artist, album, a live progress bar you can click or
+drag to seek, and single-click transport buttons. Esc or clicking elsewhere
+closes it. It polls playerctl off the UI thread, so a slow player can't freeze
+it. (It replaced a rofi popup, which could not refresh the progress and only
+accepted double-clicks.)
+
+### Bluetooth
+
+`scripts/bluetooth.sh` shows a plain icon when on, a dimmed one when off, and
+the accent icon with the device name (and battery %, when reported) when
+something is connected.
+
+| Interaction | Action |
+|---|---|
+| Left-click | rofi menu: paired devices (click to connect/disconnect), pair new, power on/off, settings |
+| Right-click | Power on / off |
+| Middle-click | KDE Bluetooth settings |
 
 > A previous `scripts/utilities/spotify_tools/` package did this through the
 > Spotify **Web API** — OAuth credentials on every machine, a 5s poll, and a
@@ -298,6 +353,9 @@ my-dotfiles/
 │   │       ├── workspaces.sh       # virtual desktops as app icons (xprop -spy)
 │   │       ├── taskbar.sh          # window list for the focused desktop
 │   │       ├── icons.sh            # shared WM_CLASS -> Nerd Font glyph table
+│   │       ├── spotify.sh          # media group (playerctl --follow) + controls
+│   │       ├── media-card.py       # now-playing card (GTK): art, seek, controls
+│   │       ├── bluetooth.sh        # bluetooth status + rofi device menu
 │   │       ├── spotify.sh          # MPRIS control via playerctl
 │   │       └── network-menu.sh     # rofi wifi dropdown
 │   ├── rofi/
@@ -342,7 +400,10 @@ my-dotfiles/
 │   ├── test-kde-setup.sh           # assertions for kde-setup.sh
 │   ├── test-rofi-theme.sh          # rofi theme parse check (runs on the host)
 │   └── run-docker-tests.sh         # test runner
-└── install.sh                      # interactive entry point
+├── cli/
+│   ├── dotfiles                    # launcher: system python or uv
+│   └── dotfiles.py                 # `dotfiles` CLI (click + rich)
+└── install.sh                      # entry point: opens the CLI, or the bash menu
 ```
 
 ## Testing
@@ -363,12 +424,14 @@ bash tests/run-docker-tests.sh --suite vm --ubuntu 2204
 bash tests/run-docker-tests.sh --suite packages --keep
 ```
 
-`tests/test-rofi-theme.sh` runs on the **host** rather than in Docker, since it
-only needs rofi's parser:
+Tests that only read the repo or use temp directories run on the **host**:
 
 ```bash
-bash tests/test-rofi-theme.sh
+bash tests/run-host-tests.sh   # step registry, cat art, bar --watch, kitty purge
+                               # safety, rofi theme, dotfiles CLI
 ```
+
+`tests/test-rofi-theme.sh` is one of them, since it only needs rofi's parser.
 
 It exists because rofi fails a theme parse *silently* — it exits 0, prints
 nothing, and renders its stock theme. The only reliable signal from the command
