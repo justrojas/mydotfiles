@@ -411,8 +411,8 @@ def choose_shell() -> str:
     t.add_column("#", style="dim", justify="right")
     t.add_column("Shell", style="cyan")
     t.add_column("Use for", style="white")
-    t.add_row("1", "bash", "work machines — already the login shell, no chsh")
-    t.add_row("2", "zsh", "personal machines — oh-my-zsh + plugins, chsh at the end")
+    t.add_row("1", "bash", "robot-env (robot workstations) — already the login shell, no chsh")
+    t.add_row("2", "zsh", "everything else — oh-my-zsh + plugins, chsh at the end")
     console.print(t)
     pick = IntPrompt.ask("Enter selection \\[#]", choices=["1", "2"], show_choices=False, default=1, console=console)
     return "zsh" if pick == 2 else "bash"

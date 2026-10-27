@@ -208,8 +208,8 @@ Building it needs **gawk** (the build rejects Ubuntu's default mawk) and
 Your login shell, and nothing else. It is chosen once, when you install:
 
 ```bash
-bash profiles/terminal-setup.sh --shell=bash    # workstation (default)
-bash profiles/terminal-setup.sh --shell=zsh     # personal machine
+bash profiles/terminal-setup.sh --shell=bash    # robot-env: robot workstations (default)
+bash profiles/terminal-setup.sh --shell=zsh     # everything else
 ```
 
 Only the shell you pick is configured — a `--shell=bash` install does not

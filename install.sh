@@ -123,8 +123,8 @@ choose_shell() {
     echo ""
     echo "Which interactive shell should this machine use?"
     echo ""
-    echo "  1) bash  — workstation / work machines (already the login shell, no chsh needed)"
-    echo "  2) zsh   — personal machines (oh-my-zsh + plugins; asks you to run chsh at the end)"
+    echo "  1) bash  — robot-env (robot workstations; already the login shell, no chsh needed)"
+    echo "  2) zsh   — everything else (oh-my-zsh + plugins; asks you to run chsh at the end)"
     echo ""
     local pick
     read -rp "Shell [1-2, default 1]: " -n 1 pick <"$TTY_STDIN" || true
