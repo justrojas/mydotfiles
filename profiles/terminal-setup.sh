@@ -371,6 +371,40 @@ if $setup_zsh; then
         _current_login_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
         if [[ -n "$zsh_path" && "$_current_login_shell" == "$zsh_path" ]]; then
             log_success "zsh configured and is already your login shell"
+        elif [[ -n "$zsh_path" ]] && ! grep -q "^${USER:-$(id -un)}:" /etc/passwd 2>/dev/null; then
+            # The account comes from NSS (GCE OS Login, LDAP, sssd), not
+            # /etc/passwd — chsh has nothing to edit, and the login shell is
+            # owned by the directory service. Hand off from bash instead.
+            #
+            # Only into a ~/.bashrc that is NOT a symlink: a zsh install leaves
+            # the distro's stock .bashrc in place, so this never writes into a
+            # file tracked by this repo (the reason the old blanket `exec zsh`
+            # append was removed). Interactive-only, so scp/rsync/herdr's ssh
+            # bootstrap still get a plain non-interactive bash.
+            log_success "zsh configured"
+            if [[ -L "$HOME/.bashrc" ]]; then
+                log_warning "Login shell is managed by NSS (OS Login/LDAP) and ~/.bashrc is a repo symlink —"
+                log_warning "  not adding a zsh hand-off. Start zsh manually or ask your admin."
+            elif grep -qF "# >>> dotfiles: zsh hand-off >>>" "$HOME/.bashrc" 2>/dev/null; then
+                log_success "zsh hand-off already in ~/.bashrc (login shell is NSS-managed)"
+            else
+                log_info "Login shell is NSS-managed (OS Login/LDAP); chsh cannot change it."
+                log_info "Adding an interactive-only zsh hand-off to ~/.bashrc"
+                if [[ $DRY_RUN -eq 0 ]]; then
+                    cat >> "$HOME/.bashrc" <<EOF
+
+# >>> dotfiles: zsh hand-off >>>
+# Login shell is managed by NSS (e.g. GCE OS Login) so chsh cannot set zsh.
+# Interactive shells only — scp/rsync/remote commands stay in bash.
+if [[ \$- == *i* && -z "\${ZSH_VERSION:-}" && -x $zsh_path ]]; then
+    export SHELL=$zsh_path
+    exec $zsh_path -l
+fi
+# <<< dotfiles: zsh hand-off <<<
+EOF
+                fi
+                log_success "zsh hand-off installed — new interactive logins land in zsh"
+            fi
         else
             log_success "zsh configured"
             log_warning "zsh is not your login shell yet (currently ${_current_login_shell:-unknown})"
@@ -610,8 +644,12 @@ fi
 
 echo ""
 echo "  Symlinks"
-verify_symlink ".bashrc"                   "$HOME/.bashrc"
-verify_symlink ".zshrc"                    "$HOME/.zshrc"
+# Only the chosen shell's rc is linked (see the shell-configuration step).
+if [[ "$SHELL_CHOICE" == "bash" ]]; then
+    verify_symlink ".bashrc"                   "$HOME/.bashrc"
+else
+    verify_symlink ".zshrc"                    "$HOME/.zshrc"
+fi
 verify_symlink ".tmux.conf"                "$HOME/.tmux.conf"
 verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
 if [[ $MINIMAL -eq 0 ]]; then
@@ -662,6 +700,9 @@ login_shell="$(getent passwd "$_user_name" 2>/dev/null | cut -d: -f7)"
 if [[ -n "$login_shell" ]]; then
     if [[ "$(basename "$login_shell")" == "$SHELL_CHOICE" ]]; then
         verify_ok "Login shell" "$login_shell"
+    elif [[ "$SHELL_CHOICE" == "zsh" ]] && grep -qF "# >>> dotfiles: zsh hand-off >>>" "$HOME/.bashrc" 2>/dev/null; then
+        # NSS-managed account (OS Login/LDAP): chsh is impossible, bash execs zsh
+        verify_ok "Login shell" "$login_shell → zsh via ~/.bashrc hand-off (NSS-managed account)"
     else
         verify_fail "Login shell" "$login_shell but this install configured $SHELL_CHOICE"
         log_info "  Run this once, then log out and back in:"
