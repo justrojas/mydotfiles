@@ -65,14 +65,24 @@ echo ""
 
 # ── shell ─────────────────────────────────────────────────────────────────────
 echo "shell:"
-assert_symlink "$HOME/.bashrc"       "$DOTFILES/config/bash/.bashrc"
-assert_symlink "$HOME/.bash_profile" "$DOTFILES/config/bash/.bash_profile"
-# vm-setup defaults to --shell=bash, so zsh must not be configured and the old
-# preference file must not reappear.
-if [[ ! -L "$HOME/.zshrc" ]]; then
-    pass ".zshrc not linked on a bash install"
+# Only the chosen shell is configured. vm-setup defaults to --shell=bash; set
+# SHELL_CHOICE=zsh when asserting a zsh install (e.g. non-robot-env VMs).
+SHELL_CHOICE="${SHELL_CHOICE:-bash}"
+if [[ "$SHELL_CHOICE" == "bash" ]]; then
+    assert_symlink "$HOME/.bashrc"       "$DOTFILES/config/bash/.bashrc"
+    assert_symlink "$HOME/.bash_profile" "$DOTFILES/config/bash/.bash_profile"
+    if [[ ! -L "$HOME/.zshrc" ]]; then pass ".zshrc not linked on a bash install"
+    else fail ".zshrc not linked on a bash install"; fi
 else
-    fail ".zshrc not linked on a bash install"
+    assert_symlink "$HOME/.zshrc" "$DOTFILES/config/zsh/.zshrc"
+    if [[ -L "$HOME/.bashrc" ]]; then fail ".bashrc should not be a repo symlink on a zsh install"
+    else pass ".bashrc left as the distro file on a zsh install"; fi
+    # NSS-managed accounts (OS Login) cannot chsh — the hand-off must exist.
+    if ! grep -q "^$(id -un):" /etc/passwd 2>/dev/null; then
+        if grep -qF "# >>> dotfiles: zsh hand-off >>>" "$HOME/.bashrc" 2>/dev/null; then
+            pass "zsh hand-off present (NSS-managed account)"
+        else fail "zsh hand-off missing on NSS-managed account"; fi
+    fi
 fi
 if [[ ! -e "$HOME/.config/shell/preferred" ]]; then
     pass "no stale shell-preference file"
