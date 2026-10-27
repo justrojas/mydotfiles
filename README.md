@@ -84,8 +84,10 @@ The interactive menu offers four options:
 - Optionally installs the polybar top bar
 
 **3 — VM / Headless Setup** (Ubuntu/Debian, requires sudo)
-- Shell + neovim + tmux + the CLI tools the shared aliases depend on
-- Deliberately skips kitty, Nerd fonts, herdr, KDE and the top bar — none of
+- Shell + neovim + tmux + herdr + the CLI tools the shared aliases depend on
+- herdr runs as a server on the VM; attach from your laptop with
+  `herdr --remote <host>`. Both sides install `PINNED_HERDR_VERSION`.
+- Deliberately skips kitty, Nerd fonts, KDE and the top bar — none of
   them do anything without a display. Your *client* terminal supplies the font
   and the terminfo entry when you SSH in.
 - Equivalent to `terminal-setup.sh --minimal` plus a trimmed apt package list

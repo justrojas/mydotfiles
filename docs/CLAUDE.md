@@ -46,7 +46,7 @@ my-dotfiles/
 │   └── common.sh               # Shared logging, symlink, backup, OS detection utils
 ├── profiles/
 │   ├── terminal-setup.sh       # Symlinks configs; installs tools at pinned versions
-│   │                           #   --minimal skips fonts/kitty/herdr (headless)
+│   │                           #   --minimal skips fonts/kitty (headless)
 │   ├── desktop-setup.sh        # install-packages → terminal-setup → kde-setup → bar-setup
 │   ├── vm-setup.sh             # Headless: trimmed apt list + terminal-setup --minimal
 │   ├── bar-setup.sh            # polybar + playerctl; masks Latte Dock autostart
@@ -136,10 +136,12 @@ install.sh
 ### `--minimal` mode
 
 `terminal-setup.sh --minimal` is the headless variant used by `vm-setup.sh`.
-It skips 3 steps (Nerd fonts, kitty config, herdr) and drops
-kitty/imagemagick/wl-clipboard/herdr from the tool-install list. `STEP_TOTAL`
+It skips 2 steps (Nerd fonts, kitty config) and drops
+kitty/imagemagick/wl-clipboard from the tool-install list. herdr is kept on
+purpose: a VM runs the herdr server that `herdr --remote` attaches to, pinned to
+`PINNED_HERDR_VERSION` so laptop and VM speak the same protocol. `STEP_TOTAL`
 is **derived** from the `STEP_NAMES` registry, which varies with both
-`--minimal` and `--shell` (10 steps full, 7 minimal, per shell) — add or remove
+`--minimal` and `--shell` (10 steps full, 8 minimal, per shell) — add or remove
 a `log_step` and you must add or remove the matching `STEP_NAMES` entry.
 `tests/test-step-total.sh` asserts the two stay in sync across all four flag
 combinations.
@@ -153,7 +155,7 @@ combinations.
 ~/.tmux.conf          → config/tmux/tmux.conf
 ~/.config/tmux        → config/tmux/
 ~/.config/kitty       → config/kitty/                # skipped by --minimal
-~/.config/herdr/config.toml → config/herdr/config.toml   # skipped by --minimal
+~/.config/herdr/config.toml → config/herdr/config.toml
 ~/.config/polybar     → config/polybar/              # bar-setup.sh only
 ~/.local/bin/bar      → config/polybar/launch.sh     # bar-setup.sh only
 ~/.local/bin/kt       → scripts/utilities/kt

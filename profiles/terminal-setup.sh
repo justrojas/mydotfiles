@@ -8,9 +8,10 @@
 # Usage: bash terminal-setup.sh [--non-interactive] [--dry-run] [--update] [--minimal]
 #
 # --minimal  headless/VM mode: skip everything that only makes sense with a GUI
-#            (kitty + its config, Nerd fonts, herdr, oh-my-posh kitty theme
-#            mapping, imagemagick, wl-clipboard). Shell + nvim + tmux + the CLI
-#            tools the shared aliases depend on are still installed.
+#            (kitty + its config, Nerd fonts, oh-my-posh kitty theme mapping,
+#            imagemagick, wl-clipboard). Shell + nvim + tmux + herdr + the CLI
+#            tools the shared aliases depend on are still installed — herdr
+#            runs as a server on the VM and you attach with `herdr --remote`.
 
 set -euo pipefail
 
@@ -72,7 +73,7 @@ STEP_NAMES=("Checking for required tools" "tmux configuration")
 [[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("Nerd fonts" "kitty configuration")
 STEP_NAMES+=("neovim configuration (NvChad)")
 STEP_NAMES+=("$SHELL_CHOICE configuration" "Utility scripts")
-[[ $MINIMAL -eq 0 ]] && STEP_NAMES+=("herdr configuration")
+STEP_NAMES+=("herdr configuration")
 STEP_NAMES+=("oh-my-posh themes" "Verifying installation")
 STEP_TOTAL=${#STEP_NAMES[@]}
 
@@ -118,11 +119,11 @@ log_step "Checking for required tools"
 
 
 # Tools to check/install. --minimal drops the GUI-only ones: kitty (terminal
-# emulator), imagemagick (used for image previews in kitty), wl-clipboard
-# (Wayland-only) and herdr (a graphical-terminal multiplexer). tmux covers
-# multiplexing on a headless box.
+# emulator), imagemagick (used for image previews in kitty) and wl-clipboard
+# (Wayland-only). herdr stays: on a VM it is the server end of `herdr --remote`,
+# and it must match the laptop's pinned version. tmux remains as a fallback.
 if [[ $MINIMAL -eq 1 ]]; then
-    TOOL_LIST=(tmux nvim git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind pip3)
+    TOOL_LIST=(tmux nvim git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind pip3 herdr)
 else
     TOOL_LIST=(tmux nvim kitty git curl npm fzf eza batcat zoxide tree glow rsync rg fdfind magick pip3 wl-copy herdr)
 fi
@@ -492,11 +493,8 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # ============================================================================
-# HERDR  (GUI terminal multiplexer — tmux covers this on a headless box)
+# HERDR  (agent multiplexer — local UI on desktops, `--remote` server on VMs)
 # ============================================================================
-if [[ $MINIMAL -eq 1 ]]; then
-    log_info "Skipping herdr configuration (--minimal; use tmux instead)"
-else
 log_step "herdr configuration"
 
 if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
@@ -521,7 +519,6 @@ if [[ -d "$DOTFILES_DIR/config/herdr" ]]; then
 else
     log_warning "config/herdr not found — skipping"
 fi
-fi  # end --minimal herdr guard
 
 # ============================================================================
 # OH-MY-POSH THEMES
@@ -616,9 +613,9 @@ echo "  Symlinks"
 verify_symlink ".bashrc"                   "$HOME/.bashrc"
 verify_symlink ".zshrc"                    "$HOME/.zshrc"
 verify_symlink ".tmux.conf"                "$HOME/.tmux.conf"
+verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
 if [[ $MINIMAL -eq 0 ]]; then
     verify_symlink ".config/kitty"             "$HOME/.config/kitty"
-    verify_symlink ".config/herdr/config.toml" "$HOME/.config/herdr/config.toml"
     verify_symlink ".local/bin/kt"             "$HOME/.local/bin/kt"
 fi
 
@@ -630,7 +627,7 @@ verify_cmd "tmux"         tmux
 [[ $MINIMAL -eq 0 ]] && verify_cmd "kitty" kitty || true
 verify_cmd "nvim"         nvim
 verify_cmd "oh-my-posh"   oh-my-posh
-[[ $MINIMAL -eq 0 ]] && verify_cmd "herdr" herdr || true
+verify_cmd "herdr"        herdr
 verify_cmd "fzf"          fzf
 verify_cmd "eza"          eza
 verify_cmd "zoxide"       zoxide

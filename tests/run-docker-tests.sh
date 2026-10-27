@@ -59,7 +59,7 @@ Test suites:
 
   vm         Runs vm-setup.sh (headless profile) then asserts the shell +
              nvim + tmux environment is in place AND that the GUI-only
-             components (kitty, herdr, fonts) were correctly skipped.
+             components (kitty, fonts) were correctly skipped.
 
   kde        Runs kde-setup.sh --config-only and asserts the config-wiring
              steps (touchegg, Kvantum, Firefox userChrome, global shortcuts,

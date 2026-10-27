@@ -3,18 +3,20 @@
 #
 # Installs the smallest set of things that still gives you the full working
 # environment on a box with no GUI: shell (bash primary, zsh available),
-# neovim, tmux, and the CLI tools that config/shell/aliases.sh depends on.
+# neovim, tmux, herdr, and the CLI tools that config/shell/aliases.sh depends on.
 #
 # Deliberately EXCLUDED (see profiles/desktop-setup.sh if you want these):
 #   kitty        — a terminal emulator is meaningless without a display; you
 #                  connect to a VM through some other terminal.
 #   Nerd fonts   — rendered by the *client* terminal, not the VM. Install them
 #                  on the machine you're SSH-ing FROM.
-#   herdr        — GUI-oriented multiplexer; tmux covers this over SSH and is
-#                  what you already have configured.
 #   KDE / Latte / polybar / touchegg — desktop only.
 #   imagemagick, wl-clipboard — image previews and Wayland clipboard need a
 #                  display server.
+#
+# herdr IS included: the VM runs the herdr server and your laptop attaches with
+# `herdr --remote <host>`, so long builds and agents survive a dropped SSH/IAP
+# link. It is installed at PINNED_HERDR_VERSION so it matches the laptop.
 #
 # Clipboard note: over SSH neither wl-copy nor xclip will do what you want.
 # tmux's own copy-mode buffer is the practical answer, and OSC-52 lets tmux
@@ -41,7 +43,7 @@ init_common "$@"
 
 STEP_TOTAL=3
 
-log_banner "VM / headless" "shell · neovim · tmux · CLI tools"
+log_banner "VM / headless" "shell · neovim · tmux · herdr · CLI tools"
 
 # ============================================================================
 # Preflight
@@ -109,8 +111,8 @@ log_success "Base packages installed"
 # ============================================================================
 log_step "Configuring shell environment"
 
-# --minimal skips fonts, kitty and herdr, and drops the GUI-only entries from
-# the tool-install list, but still installs nvim/tmux/fzf/eza/zoxide/glow at
+# --minimal skips fonts and kitty, and drops the GUI-only entries from the
+# tool-install list, but still installs nvim/tmux/herdr/fzf/eza/zoxide/glow at
 # their pinned versions and links every config.
 flags=(--minimal)
 for _a in "$@"; do
@@ -127,6 +129,7 @@ log_success "VM setup complete"
 echo ""
 echo "  Next steps:"
 echo "  • Open a new shell to pick up the new configuration"
+echo "  • From your laptop: herdr --remote <this-host> --session <name>"
 echo "  • Start tmux and press Ctrl+Space + I to install tmux plugins"
 echo "  • Launch nvim once to let lazy.nvim sync plugins"
 echo ""

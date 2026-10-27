@@ -88,12 +88,15 @@ for shell in bash zsh; do
         _bad "--shell=$shell: --minimal (${counts["$shell/1"]}) should be smaller than full (${counts["$shell/0"]})"
     fi
     mapfile -t min_reg < <(_registry 1 "$shell")
-    for step in "Nerd fonts" "kitty configuration" "herdr configuration"; do
+    for step in "Nerd fonts" "kitty configuration"; do
         [[ " ${min_reg[*]} " == *" $step "* ]] \
             && _bad "--shell=$shell --minimal should skip '$step'"
     done
+    # herdr is the server end of `herdr --remote` on a VM — it must NOT be skipped
+    [[ " ${min_reg[*]} " != *" herdr configuration "* ]] \
+        && _bad "--shell=$shell --minimal must keep 'herdr configuration'"
 done
-[[ $fail -eq 0 ]] && _ok "--minimal skips Nerd fonts, kitty and herdr for both shells"
+[[ $fail -eq 0 ]] && _ok "--minimal skips Nerd fonts and kitty, keeps herdr, for both shells"
 
 if [[ $fail -eq 0 ]]; then
     printf '  step counts: bash %s/%s, zsh %s/%s (full/minimal)\n' \

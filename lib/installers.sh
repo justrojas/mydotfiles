@@ -33,7 +33,10 @@ readonly PINNED_TMUX_VERSION="${PINNED_TMUX_VERSION:-3.4}"
 readonly PINNED_NVIM_VERSION="${PINNED_NVIM_VERSION:-v0.11.6}"
 readonly PINNED_KITTY_VERSION="${PINNED_KITTY_VERSION:-0.47.4}"
 readonly PINNED_ZSH_VERSION="${PINNED_ZSH_VERSION:-5.8.1}"
-readonly PINNED_HERDR_VERSION="${PINNED_HERDR_VERSION:-latest}"
+# herdr is pinned (not "latest") because `herdr --remote` needs client and
+# server on compatible protocols: a laptop and a VM provisioned a month apart
+# must land on the same version. Bump this deliberately, on every machine.
+readonly PINNED_HERDR_VERSION="${PINNED_HERDR_VERSION:-0.9.5}"
 
 # Minimum kitty that does NOT have the keyboard-protocol bug which double-fires
 # Enter/Tab/Backspace inside herdr. Referenced by the version check and by the
@@ -437,14 +440,55 @@ install_zoxide() {
     _confirm_install zoxide "zoxide"
 }
 
-# Install herdr — agent-aware terminal multiplexer
+# Install herdr — agent-aware terminal multiplexer, at PINNED_HERDR_VERSION.
+#
+# The official install.sh always fetches the newest release, so it cannot honor
+# a pin. Instead download the release asset directly and verify it against the
+# SHA-256 that herdr publishes per version in its release manifest — the same
+# check install.sh performs, just for a version we choose.
 install_herdr() {
-    log_info "Installing herdr via official installer..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        run_remote_installer https://herdr.dev/install.sh sh || true
-    else
-        log_info "[DRY RUN] Would install herdr via https://herdr.dev/install.sh"
+    local ver="$PINNED_HERDR_VERSION" arch
+    case "$(uname -m)" in
+        x86_64|amd64)  arch="x86_64" ;;
+        aarch64|arm64) arch="aarch64" ;;
+        *) log_error "Unsupported architecture '$(uname -m)' for herdr"; return 1 ;;
+    esac
+    local target="linux-${arch}"
+    [[ "$(uname -s)" == "Darwin" ]] && target="macos-${arch}"
+    local url="https://github.com/herdrdev/herdr/releases/download/v${ver}/herdr-${target}"
+
+    log_info "Installing herdr ${ver} (${target})..."
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log_info "[DRY RUN] Would download $url to ~/.local/bin/herdr"
+        _confirm_install herdr "herdr"
+        return 0
     fi
+
+    local tmpdir expected actual
+    tmpdir=$(mktemp -d)
+    trap "rm -rf $tmpdir" RETURN
+
+    expected="$(curl -fsSL --retry 3 https://herdr.dev/latest.json | python3 -c '
+import json, sys
+ver, target = sys.argv[1], sys.argv[2]
+d = json.load(sys.stdin)
+rel = d if d.get("version") == ver else d.get("releases", {}).get(ver, {})
+print(rel.get("sha256", {}).get(target, ""))
+' "$ver" "$target")" || expected=""
+    if [[ ${#expected} -ne 64 ]]; then
+        log_error "No published checksum for herdr ${ver} (${target}) — refusing to install"
+        return 1
+    fi
+
+    curl -fsSL --retry 3 "$url" -o "$tmpdir/herdr"
+    actual="$(sha256sum "$tmpdir/herdr" | awk '{print $1}')"
+    if [[ "$actual" != "${expected,,}" ]]; then
+        log_error "herdr checksum mismatch (expected $expected, got $actual)"
+        return 1
+    fi
+
+    ensure_dir "$HOME/.local/bin"
+    install -m 0755 "$tmpdir/herdr" "$HOME/.local/bin/herdr"
     _confirm_install herdr "herdr"
 }
 
@@ -606,6 +650,7 @@ get_installed_version() {
         nvim)  nvim --version 2>/dev/null | head -1 | grep -oP 'v\d+\.\d+\.\d+' || true ;;
         tmux)  tmux -V 2>/dev/null | grep -oP '\d+\.\d+[a-z]?' | head -1 || true ;;
         kitty) kitty --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true ;;
+        herdr) herdr --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true ;;
         *)     echo "" ;;
     esac
 }
@@ -642,6 +687,12 @@ is_tool_outdated() {
             actual="$(get_installed_version kitty)"
             [[ -z "$actual" ]] && return 1
             _older_than "$actual" "$MIN_KITTY_VERSION"
+            ;;
+        herdr)
+            local actual
+            actual="$(get_installed_version herdr)"
+            [[ -z "$actual" ]] && return 1
+            _older_than "$actual" "$PINNED_HERDR_VERSION"
             ;;
         *)  return 1 ;;  # system tools — no pinned version to enforce
     esac

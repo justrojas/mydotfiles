@@ -5,8 +5,9 @@
 # This suite asserts two distinct things:
 #   1. the shell + editor + multiplexer environment IS present
 #   2. the GUI-only components were correctly SKIPPED
-# (2) matters as much as (1) — a VM profile that quietly drags in kitty, the
-# Nerd fonts and herdr is not a VM profile.
+# (2) matters as much as (1) — a VM profile that quietly drags in kitty or the
+# Nerd fonts is not a VM profile. herdr is the exception: it is the server end
+# of `herdr --remote`, so it is asserted PRESENT and at the pinned version.
 
 set -euo pipefail
 
@@ -87,6 +88,13 @@ assert_command nvim
 assert_command tmux
 assert_symlink "$HOME/.tmux.conf" "$DOTFILES/config/tmux/tmux.conf"
 assert_dir     "$HOME/.config/nvim"
+assert_command herdr
+assert_symlink "$HOME/.config/herdr/config.toml" "$DOTFILES/config/herdr/config.toml"
+# Must equal the pin, or a laptop on the pin cannot attach with --remote.
+pinned="$(grep -oP 'PINNED_HERDR_VERSION:-\K[0-9.]+' "$DOTFILES/lib/installers.sh")"
+got="$(herdr --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true)"
+if [[ -n "$pinned" && "$got" == "$pinned" ]]; then pass "herdr $got matches pin"
+else fail "herdr version '$got' does not match pin '$pinned'"; fi
 
 # ── CLI tools the shared aliases depend on ────────────────────────────────────
 # config/shell/aliases.sh guards each of these, but the VM profile is supposed
@@ -112,9 +120,7 @@ assert_command tic
 # ── GUI components must be ABSENT ─────────────────────────────────────────────
 echo "GUI components correctly skipped:"
 refute_command kitty
-refute_command herdr
 refute_path "$HOME/.config/kitty"
-refute_path "$HOME/.config/herdr"
 refute_path "$HOME/.local/kitty.app"
 # Nerd fonts are rendered by the client terminal, not the VM.
 refute_path "$HOME/.local/share/fonts/JetBrainsMonoNerdFontMono-Regular.ttf"
