@@ -430,6 +430,27 @@ EOF
                 fi
             done
         fi
+
+        # Bazel: native zsh completion. Tools like the RAI onboarding install
+        # only Bazel's *bash* completion, which zsh's bashcompinit can't run
+        # reliably. ~/.zfunc is already on fpath in .zshrc. Fetched here, at
+        # install time, never from .zshrc (no network on shell startup).
+        if command -v bazel >/dev/null 2>&1 || command -v bazelisk >/dev/null 2>&1; then
+            if [[ ! -s "$HOME/.zfunc/_bazel" ]]; then
+                ensure_dir "$HOME/.zfunc"
+                if run_or_dry curl -fsSL --retry 3 -o "$HOME/.zfunc/_bazel" \
+                    https://raw.githubusercontent.com/bazelbuild/bazel/master/scripts/zsh_completion/_bazel; then
+                    # .zshrc reuses a cached .zcompdump for 24h; drop it so
+                    # the new completion is picked up by the next shell.
+                    run_or_dry rm -f "${ZDOTDIR:-$HOME}"/.zcompdump*
+                    log_success "bazel zsh completion installed (~/.zfunc/_bazel)"
+                else
+                    log_warning "Could not download bazel zsh completion (non-fatal)"
+                fi
+            else
+                log_success "bazel zsh completion already present"
+            fi
+        fi
     fi
 fi
 
