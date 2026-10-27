@@ -99,8 +99,8 @@ VM_PACKAGES=(
 )
 
 if [[ $DRY_RUN -eq 0 ]]; then
-    sudo apt-get update -qq
-    sudo apt-get install -y "${VM_PACKAGES[@]}"
+    sudo apt-get -o DPkg::Lock::Timeout=900 update -qq
+    sudo apt-get -o DPkg::Lock::Timeout=900 install -y "${VM_PACKAGES[@]}"
 else
     log_info "[DRY RUN] Would run: sudo apt-get install -y ${VM_PACKAGES[*]}"
 fi

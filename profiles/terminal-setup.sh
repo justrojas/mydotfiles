@@ -415,7 +415,7 @@ else
     if [[ $DRY_RUN -eq 0 ]]; then
         # oh-my-posh installer requires unzip
         if ! command -v unzip >/dev/null 2>&1; then
-            sudo apt-get install -y unzip >/dev/null 2>&1 || true
+            sudo apt-get -o DPkg::Lock::Timeout=900 install -y unzip >/dev/null 2>&1 || true
         fi
         # `|| true` keeps a transient network failure from aborting the
         # whole run, but the result MUST then be verified — otherwise a

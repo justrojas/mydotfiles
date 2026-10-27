@@ -548,7 +548,7 @@ setup_active_window_outline() {
     if ! python3 -c "import gi, cairo" >/dev/null 2>&1; then
         log_warning "python3-gi / python3-cairo missing — outline unavailable"
         if [[ $DRY_RUN -eq 0 ]]; then
-            run_or_dry sudo apt-get install -y python3-gi python3-cairo gir1.2-gtk-3.0 \
+            run_or_dry sudo apt-get -o DPkg::Lock::Timeout=900 install -y python3-gi python3-cairo gir1.2-gtk-3.0 \
                 || { log_warning "Could not install border daemon deps (non-fatal)"; return; }
         else
             log_info "[DRY RUN] Would install python3-gi python3-cairo gir1.2-gtk-3.0"

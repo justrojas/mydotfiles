@@ -74,8 +74,8 @@ BAR_PACKAGES=(polybar playerctl pavucontrol wmctrl rofi fonts-noto-color-emoji
               bluez python3-gi gir1.2-gtk-3.0)
 
 if [[ $DRY_RUN -eq 0 ]]; then
-    sudo apt-get update -qq
-    sudo apt-get install -y "${BAR_PACKAGES[@]}"
+    sudo apt-get -o DPkg::Lock::Timeout=900 update -qq
+    sudo apt-get -o DPkg::Lock::Timeout=900 install -y "${BAR_PACKAGES[@]}"
 else
     log_info "[DRY RUN] Would run: sudo apt-get install -y ${BAR_PACKAGES[*]}"
 fi

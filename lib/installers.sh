@@ -65,7 +65,7 @@ _older_than() {
 _APT_UPDATED=0
 apt_update_once() {
     if [[ $_APT_UPDATED -eq 0 && ${DRY_RUN:-0} -eq 0 ]]; then
-        sudo apt-get update -qq
+        sudo apt-get -o DPkg::Lock::Timeout=900 update -qq
         _APT_UPDATED=1
     fi
 }
@@ -145,7 +145,7 @@ install_zsh() {
     log_info "Installing zsh ${PINNED_ZSH_VERSION} via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
         apt_update_once
-        sudo apt-get install -y zsh
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y zsh
     else
         log_info "[DRY RUN] Would run: sudo apt-get install -y zsh"
     fi
@@ -266,7 +266,7 @@ purge_apt_kitty() {
 
     log_info "Purging apt-provided kitty (buggy 0.21.2) to stop herdr double-keypress..."
     log_info "  replacement in place: kitty $pinned_ver at $pinned_bin"
-    if sudo apt-get purge -y kitty 2>/dev/null; then
+    if sudo apt-get -o DPkg::Lock::Timeout=900 purge -y kitty 2>/dev/null; then
         log_success "Removed apt kitty"
     else
         log_warning "Could not purge apt kitty — remove /usr/bin/kitty manually"
@@ -301,7 +301,7 @@ install_kitty_terminfo() {
 
     if ! command -v tic >/dev/null 2>&1; then
         log_info "tic not found — installing ncurses-bin..."
-        sudo apt-get install -y ncurses-bin 2>/dev/null \
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y ncurses-bin 2>/dev/null \
             || { log_warning "Could not install ncurses-bin; skipping terminfo setup"; return 0; }
     fi
 
@@ -332,7 +332,7 @@ install_kitty_terminfo() {
     fi
 
     # Last resort: apt.
-    if sudo apt-get install -y kitty-terminfo 2>/dev/null && infocmp xterm-kitty >/dev/null 2>&1; then
+    if sudo apt-get -o DPkg::Lock::Timeout=900 install -y kitty-terminfo 2>/dev/null && infocmp xterm-kitty >/dev/null 2>&1; then
         log_success "xterm-kitty terminfo installed via apt (kitty-terminfo)"
         return 0
     fi
@@ -364,7 +364,7 @@ install_apt_package() {
     log_info "Installing $pkg via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
         apt_update_once
-        if ! sudo apt-get install -y "$pkg" 2>&1; then
+        if ! sudo apt-get -o DPkg::Lock::Timeout=900 install -y "$pkg" 2>&1; then
             log_error "apt could not install '$pkg' — package may not be in the default repos"
             return 1
         fi
@@ -379,7 +379,7 @@ install_nodejs() {
     log_info "Installing nodejs and npm via apt..."
     if [[ $DRY_RUN -eq 0 ]]; then
         apt_update_once
-        if ! sudo apt-get install -y nodejs npm 2>&1; then
+        if ! sudo apt-get -o DPkg::Lock::Timeout=900 install -y nodejs npm 2>&1; then
             log_error "apt could not install nodejs/npm"
             return 1
         fi
@@ -394,15 +394,15 @@ install_eza() {
     log_info "Installing eza via gierens apt repo..."
     if [[ $DRY_RUN -eq 0 ]]; then
         apt_update_once
-        sudo apt-get install -y gpg
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y gpg
         sudo mkdir -p /etc/apt/keyrings
         curl -fsSL https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
             | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
         echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
             | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
         sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-        sudo apt-get update -qq   # must re-run after adding the new repo
-        sudo apt-get install -y eza
+        sudo apt-get -o DPkg::Lock::Timeout=900 update -qq   # must re-run after adding the new repo
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y eza
     else
         log_info "[DRY RUN] Would add gierens apt repo and install eza"
     fi
@@ -414,15 +414,15 @@ install_glow() {
     log_info "Installing glow via charm.sh apt repo..."
     if [[ $DRY_RUN -eq 0 ]]; then
         apt_update_once
-        sudo apt-get install -y gpg
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y gpg
         sudo mkdir -p /etc/apt/keyrings
         curl -fsSL https://repo.charm.sh/apt/gpg.key \
             | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
         echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
             | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null
         sudo chmod 644 /etc/apt/keyrings/charm.gpg /etc/apt/sources.list.d/charm.list
-        sudo apt-get update -qq   # must re-run after adding the new repo
-        sudo apt-get install -y glow
+        sudo apt-get -o DPkg::Lock::Timeout=900 update -qq   # must re-run after adding the new repo
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y glow
     else
         log_info "[DRY RUN] Would add charm.sh apt repo and install glow"
     fi
@@ -539,7 +539,7 @@ install_blesh() {
     if ! command -v gawk >/dev/null 2>&1; then
         log_info "Installing gawk (required to build ble.sh)..."
         apt_update_once
-        sudo apt-get install -y gawk 2>/dev/null || {
+        sudo apt-get -o DPkg::Lock::Timeout=900 install -y gawk 2>/dev/null || {
             log_warning "Could not install gawk — skipping ble.sh"
             return 0
         }
@@ -582,7 +582,7 @@ install_tmux() {
 
     log_info "Installing build dependencies..."
     apt_update_once
-    sudo apt-get install -y build-essential libevent-dev libncurses-dev pkg-config bison
+    sudo apt-get -o DPkg::Lock::Timeout=900 install -y build-essential libevent-dev libncurses-dev pkg-config bison
 
     local tarball="tmux-${PINNED_TMUX_VERSION}.tar.gz"
     local url="https://github.com/tmux/tmux/releases/download/${PINNED_TMUX_VERSION}/${tarball}"
@@ -874,7 +874,7 @@ install_braille_font() {
 
     log_info "Installing fonts-dejavu-core (monospaced braille for the cat art)..."
     apt_update_once
-    if sudo apt-get install -y fonts-dejavu-core >/dev/null 2>&1; then
+    if sudo apt-get -o DPkg::Lock::Timeout=900 install -y fonts-dejavu-core >/dev/null 2>&1; then
         fc-cache -f >/dev/null 2>&1 || true
         if fc-list ':charset=28FF:spacing=100' 2>/dev/null | grep -q .; then
             log_success "Braille coverage installed"
